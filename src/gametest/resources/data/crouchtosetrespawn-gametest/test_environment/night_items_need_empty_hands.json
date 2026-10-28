@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:all_of",
+	"definitions": [
+		{
+			"type": "minecraft:clock_time",
+			"clock": "minecraft:overworld",
+			"time": 18000
+		},
+		{
+			"type": "crouchtosetrespawn-gametest:mod_config",
+			"sneak_with_items_sets_spawn": false
+		}
+	]
+}

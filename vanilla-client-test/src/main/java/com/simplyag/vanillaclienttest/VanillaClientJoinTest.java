@@ -85,22 +85,39 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 		check(MESSAGES.stream().noneMatch(m -> m.getString().contains(HINT_TITLE)), "hint never announced in chat");
 		wake();
 
-		// 2. Sneak click on bed A: "Respawn point set", then sleeping.
-		MESSAGES.clear();
-		lookAt(bedA);
-		TestInput input = context.getInput();
-		input.holdKey(o -> o.keyShift);
-		context.waitTicks(3);
-		input.pressKey(o -> o.keyUse);
-		context.waitFor(mc -> mc.player.isSleeping(), 100);
-		input.releaseKey(o -> o.keyShift);
-		context.waitFor(mc -> sawMessage(SET_SPAWN), 100);
-		check(true, "sneak click set spawn ('Respawn point set') and slept");
+		// 2. Sneak click on bed A with a shield in the offhand (sneak_with_items_sets_spawn, on by default):
+		// "Respawn point set" and sleeping. The client predicted the click did nothing, so it may raise the shield
+		// locally while the in-bed screen hides the key release; the server never does, and it clears on waking.
+		command("item replace entity @s weapon.offhand with shield");
+		context.waitFor(mc -> !mc.player.getOffhandItem().isEmpty(), 100);
+		sneakClick(bedA);
+		check(true, "sneak click with a shield in the offhand set spawn ('Respawn point set') and slept");
+		wake();
+		check(context.computeOnClient(mc -> !mc.player.isUsingItem()), "shield not left raised after leaving bed");
+
+		// 3. Sneak click on bed B with empty hands: spawn moves there.
+		command("item replace entity @s weapon.offhand with air");
+		context.waitFor(mc -> mc.player.getOffhandItem().isEmpty(), 100);
+		sneakClick(bedB);
+		check(true, "empty-handed sneak click set spawn ('Respawn point set') and slept");
 		wake();
 
 		context.runOnClient(mc -> mc.disconnect(new TitleScreen(), false));
 		context.waitFor(mc -> mc.level == null && mc.gui.screen() instanceof TitleScreen, 200);
 		log("disconnected cleanly");
+	}
+
+	/** Hold sneak, right-click the bed, and wait for "Respawn point set" and sleeping. */
+	private void sneakClick(BlockPos bedFoot) {
+		MESSAGES.clear();
+		lookAt(bedFoot);
+		TestInput input = this.ctx.getInput();
+		input.holdKey(o -> o.keyShift);
+		this.ctx.waitTicks(3);
+		input.pressKey(o -> o.keyUse);
+		this.ctx.waitFor(mc -> mc.player.isSleeping(), 100);
+		input.releaseKey(o -> o.keyShift);
+		this.ctx.waitFor(mc -> sawMessage(SET_SPAWN), 100);
 	}
 
 	private void lookAt(BlockPos bedFoot) {

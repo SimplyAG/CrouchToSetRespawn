@@ -90,7 +90,7 @@ tasks.register("startVanillaServer") {
 	dependsOn tasks.named("jar")
 	doLast {
 		File dir = vanillaServerDir.get().asFile
-		project.delete(new File(dir, "world"), new File(dir, "mods"), new File(dir, "logs"), new File(dir, "console.log"))
+		project.delete(new File(dir, "world"), new File(dir, "mods"), new File(dir, "config"), new File(dir, "logs"), new File(dir, "console.log"))
 		new File(dir, "mods").mkdirs()
 
 		File launcher = new File(dir, "fabric-server-launch.jar")
@@ -155,6 +155,10 @@ tasks.register("stopVanillaServer") {
 		String log = console.text
 		if (!log.contains("${vanillaTesterName} joined the game")) {
 			throw new GradleException("The vanilla client never joined the test server; see ${console}")
+		}
+		File config = new File(vanillaServerDir.get().asFile, "config/crouchtosetrespawn.properties")
+		if (!config.isFile() || !config.text.contains("sneak_with_items_sets_spawn=true") || !config.text.contains("show_spawn_hint_popup=true")) {
+			throw new GradleException("The server didn't write the default ${config}")
 		}
 		// Startup-only OS noise (Windows perf counters via oshi) logs on the main thread; anything from the
 		// running server, or anything naming the mod, counts.

@@ -56,6 +56,10 @@ public final class SpawnHint {
 
 	/** Called when a normal (non-sneaking) bed use skipped a spawn change vanilla would have made. */
 	public static void maybeShow(ServerPlayer player) {
+		if (!ModConfig.showSpawnHintPopup) {
+			return;
+		}
+
 		long night = nightIndex(player.level().getDefaultClockTime());
 		Long last = LAST_NIGHT_SHOWN.get(player.getUUID());
 		if (last != null && last == night) {

@@ -15,6 +15,7 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -32,6 +33,8 @@ import net.minecraft.world.phys.Vec3;
 public class CrouchSpawnGameTest {
 	private static final String NIGHT = "crouchtosetrespawn-gametest:night";
 	private static final String DAY = "crouchtosetrespawn-gametest:day";
+	private static final String NIGHT_ITEMS_NEED_EMPTY_HANDS = "crouchtosetrespawn-gametest:night_items_need_empty_hands";
+	private static final String NIGHT_NO_HINT = "crouchtosetrespawn-gametest:night_no_hint";
 	private static final String SET_SPAWN = "block.minecraft.set_spawn";
 	private static final String NO_SLEEP = "block.minecraft.bed.no_sleep";
 
@@ -107,6 +110,173 @@ public class CrouchSpawnGameTest {
 		helper.assertTrue(helper.getLevel().getBlockState(bed.foot.above()).is(Blocks.STONE), "sneaking with a block places it on the bed");
 		helper.assertTrue(player.getRespawnConfig() == null, "placing a block must not set spawn");
 		helper.assertFalse(player.isSleeping(), "placing a block must not sleep");
+		done(helper, player);
+	}
+
+	// --- Sneaking with items (sneak_with_items_sets_spawn) --------------------------------------------------------
+	// These send exactly what a vanilla client sends for one sneak-click (checked against Minecraft.startUseItem):
+	// per hand, main first, a use-on-block packet, then a use-item packet if that hand isn't empty, stopping at the
+	// first hand the client thinks did something. The client never predicts the mod's bed fallback, so after the
+	// offhand use-on-block it still sends the offhand use-item.
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithShieldInOffhandSetsSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+		player.setShiftKeyDown(true);
+
+		helper.assertTrue(useOn(player, InteractionHand.MAIN_HAND, bed.foot) == InteractionResult.PASS, "empty main hand does nothing");
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+		useItem(player, InteractionHand.OFF_HAND);
+
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertTrue(player.isSleeping(), "sneak use with a shield in the offhand should sleep");
+		helper.assertTrue(sawMessage(player, SET_SPAWN), "vanilla 'Respawn point set' message");
+		helper.assertFalse(player.isUsingItem(), "the shield must not be raised while getting into bed");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithSwordInMainHandSetsSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_SWORD));
+		player.setShiftKeyDown(true);
+
+		helper.assertTrue(useOn(player, InteractionHand.MAIN_HAND, bed.foot) == InteractionResult.PASS, "sword does nothing on a bed");
+		useItem(player, InteractionHand.MAIN_HAND);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertTrue(player.isSleeping(), "sneak use with a sword should sleep");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithFoodInOffhandSetsSpawnWithoutEating(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.BREAD));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+		useItem(player, InteractionHand.OFF_HAND);
+
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertFalse(player.isUsingItem(), "must not start eating while getting into bed");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithTorchInOffhandSetsSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.TORCH));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+		useItem(player, InteractionHand.OFF_HAND);
+
+		// A torch can't attach to a bed, so it does nothing there and the bed gets used.
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertTrue(player.isSleeping(), "sneak use with a torch in the offhand should sleep");
+		helper.assertTrue(helper.getLevel().getBlockState(bed.foot.above()).isAir(), "no torch placed on the bed");
+		done(helper, player);
+	}
+
+	@GameTest(environment = DAY)
+	public void sneakWithShieldDuringDaySetsSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+		useItem(player, InteractionHand.OFF_HAND);
+
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertFalse(player.isSleeping(), "can't sleep during the day");
+		helper.assertTrue(sawMessage(player, NO_SLEEP), "vanilla 'only sleep at night' message");
+		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 0, "sneak use never shows the hint");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithBlockInOffhandPlacesBlock(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.STONE));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		helper.assertTrue(useOn(player, InteractionHand.OFF_HAND, bed.foot).consumesAction(), "offhand stone gets placed");
+
+		helper.assertTrue(helper.getLevel().getBlockState(bed.foot.above()).is(Blocks.STONE), "offhand block placed on the bed");
+		helper.assertTrue(player.getRespawnConfig() == null, "placing a block must not set spawn");
+		helper.assertFalse(player.isSleeping(), "placing a block must not sleep");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void sneakWithBlockInMainHandAndShieldInOffhandPlacesBlock(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STONE));
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+		player.setShiftKeyDown(true);
+
+		// The main hand places the stone, so a vanilla client sends nothing for the offhand.
+		helper.assertTrue(useOn(player, InteractionHand.MAIN_HAND, bed.foot).consumesAction(), "main-hand stone gets placed");
+
+		helper.assertTrue(helper.getLevel().getBlockState(bed.foot.above()).is(Blocks.STONE), "main-hand block placed on the bed");
+		helper.assertTrue(player.getRespawnConfig() == null, "placing a block must not set spawn");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void normalUseWithShieldStillSleepsWithoutSettingSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+
+		helper.assertTrue(useOn(player, InteractionHand.MAIN_HAND, bed.foot).consumesAction(), "not sneaking: vanilla uses the bed");
+
+		helper.assertTrue(player.isSleeping(), "normal use sleeps");
+		helper.assertTrue(player.getRespawnConfig() == null, "normal use must not set spawn");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT_ITEMS_NEED_EMPTY_HANDS)
+	public void settingOffShieldInOffhandBlocksBed(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+		useItem(player, InteractionHand.OFF_HAND);
+
+		helper.assertTrue(player.getRespawnConfig() == null, "with the setting off, vanilla skips the bed when a hand holds anything");
+		helper.assertFalse(player.isSleeping(), "with the setting off, sneaking with a shield doesn't sleep");
+		helper.assertTrue(player.isUsingItem(), "with the setting off, the shield is raised as in vanilla");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT_ITEMS_NEED_EMPTY_HANDS)
+	public void settingOffEmptyHandsStillSetSpawn(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setShiftKeyDown(true);
+
+		use(player, bed.foot);
+
+		assertSpawnAt(helper, player, bed.head);
+		helper.assertTrue(player.isSleeping(), "empty-handed sneak use works with the setting off too");
 		done(helper, player);
 	}
 
@@ -222,11 +392,11 @@ public class CrouchSpawnGameTest {
 		helper.runAfterDelay(4, () -> {
 			// The next evening (still dark, so the bed still sleeps): the hint is due again.
 			helper.setTime(18000 + 24000);
-			helper.getLevel().updateSkyBrightness();
+			refreshTimeOfDay(helper.getLevel());
 			use(player, bed.foot);
 			helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 2, "the next night should show the hint again");
 			helper.setTime(18000);
-			helper.getLevel().updateSkyBrightness();
+			refreshTimeOfDay(helper.getLevel());
 			done(helper, player);
 		});
 	}
@@ -257,6 +427,19 @@ public class CrouchSpawnGameTest {
 
 		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 1, "a normal day click is where the hint helps most");
 		helper.runAfterDelay(4, () -> done(helper, player));
+	}
+
+	@GameTest(environment = NIGHT_NO_HINT)
+	public void settingOffNoHint(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+
+		use(player, bed.foot);
+
+		helper.assertTrue(player.isSleeping(), "normal sleep still works");
+		helper.assertTrue(player.getRespawnConfig() == null, "normal sleep still doesn't set spawn");
+		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 0, "show_spawn_hint_popup=false shows no hint");
+		done(helper, player);
 	}
 
 	@GameTest(environment = NIGHT)
@@ -290,8 +473,19 @@ public class CrouchSpawnGameTest {
 	private record Bed(BlockPos foot, BlockPos head) {
 	}
 
+	/**
+	 * The batch's clock_time environment changes the clock, but day/night (sky darkness and the environment
+	 * attributes behind it) is only recomputed in the next level tick. Without this a test running on the batch's
+	 * first tick can still see the previous batch's time.
+	 */
+	private static void refreshTimeOfDay(ServerLevel level) {
+		level.environmentAttributes().invalidateTickCache();
+		level.updateSkyBrightness();
+	}
+
 	/** A south-facing bed on a stone floor, at relative x = {@code x}, z = 1..2. */
 	private static Bed placeBed(GameTestHelper helper, int x) {
+		refreshTimeOfDay(helper.getLevel());
 		for (int dx = -1; dx <= 1; dx++) {
 			for (int dz = 0; dz <= 3; dz++) {
 				helper.setBlock(new BlockPos(x + dx, 0, dz), Blocks.STONE);
@@ -320,7 +514,17 @@ public class CrouchSpawnGameTest {
 	}
 
 	private static void use(ServerPlayer player, BlockPos pos) {
-		player.gameMode.useItemOn(player, player.level(), player.getMainHandItem(), InteractionHand.MAIN_HAND, hit(pos));
+		useOn(player, InteractionHand.MAIN_HAND, pos);
+	}
+
+	/** One use-on-block packet. */
+	private static InteractionResult useOn(ServerPlayer player, InteractionHand hand, BlockPos pos) {
+		return player.gameMode.useItemOn(player, player.level(), player.getItemInHand(hand), hand, hit(pos));
+	}
+
+	/** One use-item packet. */
+	private static InteractionResult useItem(ServerPlayer player, InteractionHand hand) {
+		return player.gameMode.useItem(player, player.level(), player.getItemInHand(hand), hand);
 	}
 
 	private static BlockHitResult hit(BlockPos pos) {

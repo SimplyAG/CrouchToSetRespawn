@@ -12,6 +12,7 @@ public class CrouchToSetRespawn implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		ModConfig.load();
 		SpawnHint.init();
 	}
 }
