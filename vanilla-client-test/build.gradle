@@ -1,0 +1,43 @@
+// A client that does NOT have Crouch to Set Respawn installed. Its only mod is this test driver (plus Fabric API to
+// run client game tests), and it joins the real dedicated server the root project starts, the way any vanilla
+// client would. Run it with `gradlew vanillaClientTest` from the root, never on its own.
+
+plugins {
+	id 'net.fabricmc.fabric-loom'
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_version}"
+}
+
+fabricApi {
+	configureTests {
+		createSourceSet = false
+		modId = "vanillaclienttest"
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true
+	}
+}
+
+tasks.named("runClientGameTest") {
+	systemProperty "vanillaclienttest.server", "127.0.0.1:${rootProject.ext.vanillaServerPort}"
+	dependsOn ":startVanillaServer"
+	finalizedBy ":stopVanillaServer"
+}
+
+// Only `gradlew vanillaClientTest` runs it: it needs the staged server, so keep it out of `build`.
+tasks.named("check") {
+	setDependsOn(dependsOn.findAll { !(it instanceof TaskProvider && it.name == "runClientGameTest") && it != "runClientGameTest" })
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}

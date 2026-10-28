@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "vanillaclienttest",
+	"version": "1.0.0",
+	"name": "Vanilla Client Test Driver",
+	"description": "Test-only: drives a client without Crouch to Set Respawn against the staged dedicated server.",
+	"environment": "client",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.simplyag.vanillaclienttest.VanillaClientJoinTest"
+		]
+	},
+	"mixins": [
+		"vanillaclienttest.mixins.json"
+	],
+	"depends": {
+		"fabric-api": "*"
+	}
+}

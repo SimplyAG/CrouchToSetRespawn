@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "com.simplyag.vanillaclienttest.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AdvancementToastAccessor",
+		"ToastManagerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

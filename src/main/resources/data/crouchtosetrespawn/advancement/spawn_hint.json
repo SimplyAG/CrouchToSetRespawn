@@ -1,0 +1,23 @@
+{
+	"display": {
+		"icon": {
+			"id": "minecraft:red_bed"
+		},
+		"title": {
+			"text": "Bed not set as spawn"
+		},
+		"description": {
+			"text": "Sneak + use to set respawn"
+		},
+		"background": "minecraft:gui/advancements/backgrounds/adventure",
+		"frame": "task",
+		"show_toast": true,
+		"announce_to_chat": false,
+		"hidden": true
+	},
+	"criteria": {
+		"hint": {
+			"trigger": "minecraft:impossible"
+		}
+	}
+}

@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"id": "crouchtosetrespawn-gametest",
+	"version": "1.0.0",
+	"name": "Crouch to Set Respawn Game Tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"com.simplyag.crouchtosetrespawn.test.CrouchSpawnGameTest"
+		]
+	},
+	"mixins": [
+		"crouchtosetrespawn-gametest.mixins.json"
+	],
+	"depends": {
+		"crouchtosetrespawn": "*"
+	}
+}
