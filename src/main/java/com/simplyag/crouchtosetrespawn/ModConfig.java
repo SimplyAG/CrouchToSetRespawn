@@ -29,8 +29,8 @@ public final class ModConfig {
 		# false = vanilla rule: both hands must be empty to use a bed while sneaking.
 		sneak_with_items_sets_spawn=true
 
-		# On a normal (non-sneaking) bed click, show a popup:
-		# "Bed not set as spawn - Sneak + use to set respawn". At most once per player per night.
+		# On a normal (non-sneaking) bed click, tell the player "Bed not set as spawn - Sneak + use to set respawn".
+		# At most once per player per night. The first time ever is a popup, after that it is text above the hotbar.
 		show_spawn_hint_popup=true
 		""";
 
@@ -42,7 +42,13 @@ public final class ModConfig {
 	}
 
 	static void load() {
-		Path path = FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+		load(FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME));
+	}
+
+	/** Public for the game tests, which load files with edited values. */
+	public static void load(Path path) {
+		sneakWithItemsSetsSpawn = true;
+		showSpawnHintPopup = true;
 		if (!Files.exists(path)) {
 			try {
 				Files.createDirectories(path.getParent());

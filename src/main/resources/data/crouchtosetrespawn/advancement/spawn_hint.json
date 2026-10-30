@@ -4,7 +4,7 @@
 			"id": "minecraft:red_bed"
 		},
 		"title": {
-			"text": "Bed not set as spawn"
+			"text": "Bed not set as spawn: Sneak + use to set respawn"
 		},
 		"description": {
 			"text": "Sneak + use to set respawn"

@@ -30,7 +30,8 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 	public static final List<AdvancementHolder> ADVANCEMENT_TOASTS = new CopyOnWriteArrayList<>();
 	private static final List<Component> MESSAGES = new CopyOnWriteArrayList<>();
 	private static final Identifier HINT = Identifier.fromNamespaceAndPath("crouchtosetrespawn", "spawn_hint");
-	private static final String HINT_TITLE = "Bed not set as spawn";
+	private static final String HINT_TITLE = "Bed not set as spawn: Sneak + use to set respawn";
+	private static final String HINT_TEXT = "Bed not set as spawn - Sneak + use to set respawn";
 	private static final String SET_SPAWN = "block.minecraft.set_spawn";
 
 	private ClientGameTestContext ctx;
@@ -83,6 +84,22 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 			"hint advancement removed from the client's advancement tree again");
 		check(!sawMessage(SET_SPAWN), "no 'Respawn point set' on a normal sleep");
 		check(MESSAGES.stream().noneMatch(m -> m.getString().contains(HINT_TITLE)), "hint never announced in chat");
+		// Past the toast's 1.5s "Advancement Made!" header, so the screenshot shows the wrapped instruction.
+		sleepRealTime(2500);
+		context.takeScreenshot("first_hint_toast");
+		wake();
+
+		// 1b. The next night: the same click is action bar text this time, not another toast.
+		command("time set 42000");
+		context.waitTicks(5);
+		MESSAGES.clear();
+		ADVANCEMENT_TOASTS.clear();
+		lookAt(bedB);
+		context.getInput().pressKey(o -> o.keyUse);
+		context.waitFor(mc -> mc.player.isSleeping(), 100);
+		context.waitFor(mc -> MESSAGES.stream().anyMatch(m -> m.getString().equals(HINT_TEXT)), 100);
+		check(ADVANCEMENT_TOASTS.stream().noneMatch(a -> a.id().equals(HINT)), "second hint is action bar text, not a toast");
+		context.takeScreenshot("later_hint_action_bar");
 		wake();
 
 		// 2. Sneak click on bed A with a shield in the offhand (sneak_with_items_sets_spawn, on by default):
@@ -139,6 +156,14 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 	private void command(String command) {
 		this.ctx.runOnClient(mc -> mc.player.connection.sendCommand(command));
 		this.ctx.waitTicks(2);
+	}
+
+	private static void sleepRealTime(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			throw new AssertionError(e);
+		}
 	}
 
 	private static String fill(BlockPos from, BlockPos to, String block) {

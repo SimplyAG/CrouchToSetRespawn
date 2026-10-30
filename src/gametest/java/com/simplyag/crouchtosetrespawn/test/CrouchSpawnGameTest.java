@@ -12,6 +12,7 @@ import net.minecraft.core.GlobalPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -19,7 +20,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.AbstractBedBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
@@ -31,12 +33,12 @@ import net.minecraft.world.phys.Vec3;
  * ServerPlayerGameMode.useItemOn, the same path a use-item-on packet from a real client takes.
  */
 public class CrouchSpawnGameTest {
-	private static final String NIGHT = "crouchtosetrespawn-gametest:night";
-	private static final String DAY = "crouchtosetrespawn-gametest:day";
-	private static final String NIGHT_ITEMS_NEED_EMPTY_HANDS = "crouchtosetrespawn-gametest:night_items_need_empty_hands";
-	private static final String NIGHT_NO_HINT = "crouchtosetrespawn-gametest:night_no_hint";
-	private static final String SET_SPAWN = "block.minecraft.set_spawn";
-	private static final String NO_SLEEP = "block.minecraft.bed.no_sleep";
+	static final String NIGHT = "crouchtosetrespawn-gametest:night";
+	static final String DAY = "crouchtosetrespawn-gametest:day";
+	static final String NIGHT_ITEMS_NEED_EMPTY_HANDS = "crouchtosetrespawn-gametest:night_items_need_empty_hands";
+	static final String NIGHT_NO_HINT = "crouchtosetrespawn-gametest:night_no_hint";
+	static final String SET_SPAWN = "block.minecraft.set_spawn";
+	static final String NO_SLEEP = "block.minecraft.bed.no_sleep";
 
 	// --- Spawn behavior ---------------------------------------------------------------------------------------
 
@@ -301,38 +303,62 @@ public class CrouchSpawnGameTest {
 
 	@GameTest
 	public void netherBedExplodesWhenSneaking(GameTestHelper helper) {
-		netherBedExplodes(helper, true, 0);
+		bedExplodes(helper, Level.NETHER, true, ItemStack.EMPTY, 0);
 	}
 
 	@GameTest
 	public void netherBedExplodesWhenNotSneaking(GameTestHelper helper) {
-		netherBedExplodes(helper, false, 4);
+		bedExplodes(helper, Level.NETHER, false, ItemStack.EMPTY, 4);
 	}
 
-	private void netherBedExplodes(GameTestHelper helper, boolean sneaking, int chunkX) {
-		ServerLevel nether = helper.getLevel().getServer().getLevel(Level.NETHER);
-		nether.setChunkForced(chunkX, 0, true);
+	@GameTest
+	public void netherBedExplodesWhenSneakingWithShield(GameTestHelper helper) {
+		bedExplodes(helper, Level.NETHER, true, new ItemStack(Items.SHIELD), 8);
+	}
+
+	@GameTest
+	public void endBedExplodesWhenSneaking(GameTestHelper helper) {
+		bedExplodes(helper, Level.END, true, ItemStack.EMPTY, 200);
+	}
+
+	@GameTest
+	public void endBedExplodesWhenNotSneaking(GameTestHelper helper) {
+		bedExplodes(helper, Level.END, false, ItemStack.EMPTY, 204);
+	}
+
+	/**
+	 * A bed in a dimension whose bed rule is destroy_on_use, on a netherrack floor (weak enough that the blast
+	 * visibly removes it). The packets are what a vanilla client sends for the held items; with an offhand item
+	 * the mod's fallback is what reaches the bed, and that must explode it like vanilla too.
+	 */
+	private void bedExplodes(GameTestHelper helper, ResourceKey<Level> dimension, boolean sneaking, ItemStack offhand, int chunkX) {
+		ServerLevel level = helper.getLevel().getServer().getLevel(dimension);
+		level.setChunkForced(chunkX, 0, true);
 		BlockPos origin = new BlockPos(chunkX * 16 + 4, 110, 4);
 		for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, 0, -4), origin.offset(4, 5, 4))) {
-			nether.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+			level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
 		}
 		for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -1, -4), origin.offset(4, -1, 4))) {
-			nether.setBlockAndUpdate(pos, Blocks.NETHERRACK.defaultBlockState());
+			level.setBlockAndUpdate(pos, Blocks.NETHERRACK.defaultBlockState());
 		}
-		Bed bed = placeBedAt(nether, origin);
+		Bed bed = placeBedAt(level, origin);
 
 		ServerPlayer player = helper.makeMockServerPlayerInLevel();
-		player.teleportTo(nether, bed.foot.getX() - 0.5, bed.foot.getY(), bed.foot.getZ() + 0.5, Set.of(), 0, 0, true);
+		player.teleportTo(level, bed.foot.getX() - 0.5, bed.foot.getY(), bed.foot.getZ() + 0.5, Set.of(), 0, 0, true);
 		player.setShiftKeyDown(sneaking);
+		player.setItemInHand(InteractionHand.OFF_HAND, offhand);
 
-		player.gameMode.useItemOn(player, nether, player.getMainHandItem(), InteractionHand.MAIN_HAND, hit(bed.foot));
+		player.gameMode.useItemOn(player, level, player.getMainHandItem(), InteractionHand.MAIN_HAND, hit(bed.foot));
+		if (!offhand.isEmpty() && sneaking) {
+			player.gameMode.useItemOn(player, level, player.getOffhandItem(), InteractionHand.OFF_HAND, hit(bed.foot));
+		}
 
-		helper.assertTrue(nether.getBlockState(bed.foot).isAir() && nether.getBlockState(bed.head).isAir(), "bed should be destroyed");
-		helper.assertTrue(nether.getBlockState(bed.head.below()).isAir(), "explosion should have blown out the netherrack under the bed");
-		helper.assertTrue(player.getRespawnConfig() == null, "a Nether bed must never set spawn");
-		helper.assertFalse(player.isSleeping(), "a Nether bed must never sleep");
-		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 0, "no hint for a Nether bed");
-		nether.setChunkForced(chunkX, 0, false);
+		helper.assertTrue(level.getBlockState(bed.foot).isAir() && level.getBlockState(bed.head).isAir(), "bed should be destroyed");
+		helper.assertTrue(level.getBlockState(bed.head.below()).isAir(), "explosion should have blown out the netherrack under the bed");
+		helper.assertTrue(player.getRespawnConfig() == null, "a destroy_on_use bed must never set spawn");
+		helper.assertFalse(player.isSleeping(), "a destroy_on_use bed must never sleep");
+		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 0, "no hint for a destroy_on_use bed");
+		level.setChunkForced(chunkX, 0, false);
 		done(helper, player);
 	}
 
@@ -378,7 +404,7 @@ public class CrouchSpawnGameTest {
 		done(helper, player);
 	}
 
-	@GameTest(environment = NIGHT, maxTicks = 40)
+	@GameTest(environment = NIGHT, maxTicks = 120)
 	public void hintThrottledPerNight(GameTestHelper helper) {
 		Bed bed = placeBed(helper, 1);
 		ServerPlayer player = playerBeside(helper, bed);
@@ -390,15 +416,42 @@ public class CrouchSpawnGameTest {
 		helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 1, "three clicks in one night should show the hint once");
 
 		helper.runAfterDelay(4, () -> {
-			// The next evening (still dark, so the bed still sleeps): the hint is due again.
+			// The next evening (still dark, so the bed still sleeps): due again, now as text rather than a toast.
+			player.stopSleepInBed(false, true);
 			helper.setTime(18000 + 24000);
 			refreshTimeOfDay(helper.getLevel());
 			use(player, bed.foot);
-			helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 2, "the next night should show the hint again");
+			helper.assertTrue(Recorder.hintGrants(player.getUUID()) == 1, "only the first ever hint is a toast");
+			helper.assertFalse(sawHintText(player), "the text waits for the click's own messages");
 			helper.setTime(18000);
 			refreshTimeOfDay(helper.getLevel());
+			helper.runAfterDelay(SpawnHint.ACTION_BAR_DELAY + 2, () -> {
+				helper.assertTrue(sawHintText(player), "the next night should show the hint text");
+				done(helper, player);
+			});
+		});
+	}
+
+	@GameTest(environment = DAY, maxTicks = 120)
+	public void hintTextSkippedIfSpawnSetMeanwhile(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		AdvancementHolder seen = helper.getLevel().getServer().getAdvancements().get(SpawnHint.SEEN_ADVANCEMENT);
+		player.getAdvancements().award(seen, SpawnHint.CRITERION);
+
+		use(player, bed.foot);
+		player.setShiftKeyDown(true);
+		use(player, bed.foot);
+		assertSpawnAt(helper, player, bed.head);
+
+		helper.runAfterDelay(SpawnHint.ACTION_BAR_DELAY + 2, () -> {
+			helper.assertFalse(sawHintText(player), "spawn is set now, so the hint no longer applies");
 			done(helper, player);
 		});
+	}
+
+	static boolean sawHintText(ServerPlayer player) {
+		return Recorder.messages(player.getUUID()).contains(SpawnHint.ACTION_BAR_TEXT);
 	}
 
 	@GameTest(environment = NIGHT)
@@ -470,7 +523,7 @@ public class CrouchSpawnGameTest {
 
 	// --- Helpers ----------------------------------------------------------------------------------------------
 
-	private record Bed(BlockPos foot, BlockPos head) {
+	record Bed(BlockPos foot, BlockPos head) {
 	}
 
 	/**
@@ -478,13 +531,13 @@ public class CrouchSpawnGameTest {
 	 * attributes behind it) is only recomputed in the next level tick. Without this a test running on the batch's
 	 * first tick can still see the previous batch's time.
 	 */
-	private static void refreshTimeOfDay(ServerLevel level) {
+	static void refreshTimeOfDay(ServerLevel level) {
 		level.environmentAttributes().invalidateTickCache();
 		level.updateSkyBrightness();
 	}
 
 	/** A south-facing bed on a stone floor, at relative x = {@code x}, z = 1..2. */
-	private static Bed placeBed(GameTestHelper helper, int x) {
+	static Bed placeBed(GameTestHelper helper, int x) {
 		refreshTimeOfDay(helper.getLevel());
 		for (int dx = -1; dx <= 1; dx++) {
 			for (int dz = 0; dz <= 3; dz++) {
@@ -494,71 +547,76 @@ public class CrouchSpawnGameTest {
 		return placeBedAt(helper.getLevel(), helper.absolutePos(new BlockPos(x, 1, 1)));
 	}
 
-	private static Bed placeBedAt(ServerLevel level, BlockPos foot) {
+	static Bed placeBedAt(ServerLevel level, BlockPos foot) {
+		return placeBedAt(level, foot, Blocks.BED.red());
+	}
+
+	/** Any AbstractBedBlock (colored or straw), south-facing. */
+	static Bed placeBedAt(ServerLevel level, BlockPos foot, Block bedBlock) {
 		BlockPos head = foot.south();
-		BlockState state = Blocks.BED.red().defaultBlockState().setValue(BedBlock.FACING, Direction.SOUTH);
-		level.setBlockAndUpdate(foot, state.setValue(BedBlock.PART, BedPart.FOOT));
-		level.setBlockAndUpdate(head, state.setValue(BedBlock.PART, BedPart.HEAD));
+		BlockState state = bedBlock.defaultBlockState().setValue(AbstractBedBlock.FACING, Direction.SOUTH);
+		level.setBlockAndUpdate(foot, state.setValue(AbstractBedBlock.PART, BedPart.FOOT));
+		level.setBlockAndUpdate(head, state.setValue(AbstractBedBlock.PART, BedPart.HEAD));
 		return new Bed(foot.immutable(), head.immutable());
 	}
 
-	private static ServerPlayer playerBeside(GameTestHelper helper, Bed bed) {
+	static ServerPlayer playerBeside(GameTestHelper helper, Bed bed) {
 		ServerPlayer player = helper.makeMockServerPlayerInLevel();
 		moveBeside(player, bed);
 		return player;
 	}
 
 	/** Standing on the floor just west of the bed's foot, well within vanilla's 3-block reach check. */
-	private static void moveBeside(ServerPlayer player, Bed bed) {
+	static void moveBeside(ServerPlayer player, Bed bed) {
 		player.teleportTo((ServerLevel) player.level(), bed.foot.getX() - 0.5, bed.foot.getY(), bed.foot.getZ() + 0.5, Set.of(), 0, 0, true);
 	}
 
-	private static void use(ServerPlayer player, BlockPos pos) {
+	static void use(ServerPlayer player, BlockPos pos) {
 		useOn(player, InteractionHand.MAIN_HAND, pos);
 	}
 
 	/** One use-on-block packet. */
-	private static InteractionResult useOn(ServerPlayer player, InteractionHand hand, BlockPos pos) {
+	static InteractionResult useOn(ServerPlayer player, InteractionHand hand, BlockPos pos) {
 		return player.gameMode.useItemOn(player, player.level(), player.getItemInHand(hand), hand, hit(pos));
 	}
 
 	/** One use-item packet. */
-	private static InteractionResult useItem(ServerPlayer player, InteractionHand hand) {
+	static InteractionResult useItem(ServerPlayer player, InteractionHand hand) {
 		return player.gameMode.useItem(player, player.level(), player.getItemInHand(hand), hand);
 	}
 
-	private static BlockHitResult hit(BlockPos pos) {
+	static BlockHitResult hit(BlockPos pos) {
 		return new BlockHitResult(Vec3.atCenterOf(pos).add(0, 0.0625, 0), Direction.UP, pos, false);
 	}
 
-	private static void assertSpawnAt(GameTestHelper helper, ServerPlayer player, BlockPos pos) {
+	static void assertSpawnAt(GameTestHelper helper, ServerPlayer player, BlockPos pos) {
 		ServerPlayer.RespawnConfig respawn = player.getRespawnConfig();
 		helper.assertTrue(respawn != null && respawn.respawnData().globalPos().equals(GlobalPos.of(player.level().dimension(), pos)),
 			"spawn should be at " + pos.toShortString() + " but is " + (respawn == null ? "unset" : respawn.respawnData().globalPos()));
 	}
 
-	private static void assertDark(GameTestHelper helper, boolean dark) {
+	static void assertDark(GameTestHelper helper, boolean dark) {
 		helper.assertTrue(helper.getLevel().isDarkOutside() == dark, "test environment should be " + (dark ? "night" : "day"));
 	}
 
-	private static AdvancementHolder hint(GameTestHelper helper) {
+	static AdvancementHolder hint(GameTestHelper helper) {
 		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(SpawnHint.ADVANCEMENT);
 		helper.assertTrue(holder != null, "hint advancement should be loaded from the mod's data");
 		return holder;
 	}
 
-	private static boolean sawMessage(ServerPlayer player, String key) {
+	static boolean sawMessage(ServerPlayer player, String key) {
 		List<Component> messages = Recorder.messages(player.getUUID());
 		return messages.stream().anyMatch(message -> message.getContents() instanceof TranslatableContents t && t.getKey().equals(key));
 	}
 
 	/** An advancement announcement for the hint (other tests in the batch legitimately announce Sweet Dreams). */
-	private static boolean isAdvancementAnnouncement(Component message) {
+	static boolean isAdvancementAnnouncement(Component message) {
 		return message.getContents() instanceof TranslatableContents t && t.getKey().startsWith("chat.type.advancement")
 			&& message.getString().contains("Bed not set as spawn");
 	}
 
-	private static void done(GameTestHelper helper, ServerPlayer player) {
+	static void done(GameTestHelper helper, ServerPlayer player) {
 		if (player.isSleeping()) {
 			player.stopSleepInBed(false, true);
 		}

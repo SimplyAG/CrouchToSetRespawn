@@ -57,10 +57,11 @@ abstract class ServerPlayerMixin {
 
 		ServerPlayer self = (ServerPlayer) (Object) this;
 		ServerPlayer.RespawnConfig respawn = self.getRespawnConfig();
-		if (respawn != null && respawn.respawnData().globalPos().equals(GlobalPos.of(self.level().dimension(), pos))) {
+		GlobalPos bed = GlobalPos.of(self.level().dimension(), pos);
+		if (respawn != null && respawn.respawnData().globalPos().equals(bed)) {
 			return;
 		}
 
-		SpawnHint.maybeShow(self);
+		SpawnHint.maybeShow(self, bed);
 	}
 }
