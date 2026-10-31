@@ -166,6 +166,7 @@ public class EdgeCaseGameTest {
 		helper.assertTrue(player.isSleeping(), "straw beds still sleep");
 		helper.assertTrue(player.getRespawnConfig() == null, "the straw bed rule never sets spawn, sneaking or not");
 		helper.assertFalse(sawMessage(player, SET_SPAWN), "no 'Respawn point set' for a straw bed");
+		helper.assertFalse(CrouchSpawnGameTest.hasUndercoverSleeper(helper, player), "no spawn set, so no Undercover Sleeper");
 		done(helper, player);
 	}
 
@@ -217,6 +218,7 @@ public class EdgeCaseGameTest {
 
 		helper.assertTrue(sawMessage(sneaker, "block.minecraft.bed.too_far_away"), "vanilla 'too far away' message");
 		helper.assertTrue(sneaker.getRespawnConfig() == null, "too far away: no spawn, even sneaking");
+		helper.assertFalse(CrouchSpawnGameTest.hasUndercoverSleeper(helper, sneaker), "too far away: no Undercover Sleeper");
 		helper.assertTrue(Recorder.hintGrants(normal.getUUID()) == 0, "too far away: vanilla wouldn't set spawn, so no hint");
 		done(helper, sneaker);
 		done(helper, normal);
@@ -236,6 +238,7 @@ public class EdgeCaseGameTest {
 
 		helper.assertTrue(sawMessage(sneaker, "block.minecraft.bed.obstructed"), "vanilla 'This bed is obstructed' message");
 		helper.assertTrue(sneaker.getRespawnConfig() == null, "obstructed: no spawn, even sneaking");
+		helper.assertFalse(CrouchSpawnGameTest.hasUndercoverSleeper(helper, sneaker), "obstructed: no Undercover Sleeper");
 		helper.assertTrue(Recorder.hintGrants(normal.getUUID()) == 0, "obstructed: vanilla wouldn't set spawn, so no hint");
 		done(helper, sneaker);
 		done(helper, normal);
@@ -257,6 +260,7 @@ public class EdgeCaseGameTest {
 		helper.assertTrue(sawMessage(sneaker, "block.minecraft.bed.not_safe"), "vanilla 'monsters nearby' message");
 		helper.assertFalse(sneaker.isSleeping() || normal.isSleeping(), "nobody sleeps with a monster nearby");
 		assertSpawnAt(helper, sneaker, bed.head());
+		helper.assertTrue(CrouchSpawnGameTest.hasUndercoverSleeper(helper, sneaker), "spawn was set, so it's earned even without sleeping");
 		helper.assertTrue(normal.getRespawnConfig() == null, "normal click with monsters nearby: no spawn");
 		helper.assertTrue(Recorder.hintGrants(normal.getUUID()) == 1, "vanilla would have set spawn here, so the hint shows");
 		zombie.discard();

@@ -30,6 +30,7 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 	public static final List<AdvancementHolder> ADVANCEMENT_TOASTS = new CopyOnWriteArrayList<>();
 	private static final List<Component> MESSAGES = new CopyOnWriteArrayList<>();
 	private static final Identifier HINT = Identifier.fromNamespaceAndPath("crouchtosetrespawn", "spawn_hint");
+	private static final Identifier UNDERCOVER_SLEEPER = Identifier.fromNamespaceAndPath("crouchtosetrespawn", "undercover_sleeper");
 	private static final String HINT_TITLE = "Bed not set as spawn: Sneak + use to set respawn";
 	private static final String HINT_TEXT = "Bed not set as spawn - Sneak + use to set respawn";
 	private static final String SET_SPAWN = "block.minecraft.set_spawn";
@@ -107,8 +108,18 @@ public class VanillaClientJoinTest implements FabricClientGameTest {
 		// locally while the in-bed screen hides the key release; the server never does, and it clears on waking.
 		command("item replace entity @s weapon.offhand with shield");
 		context.waitFor(mc -> !mc.player.getOffhandItem().isEmpty(), 100);
+		ADVANCEMENT_TOASTS.clear();
 		sneakClick(bedA);
 		check(true, "sneak click with a shield in the offhand set spawn ('Respawn point set') and slept");
+		context.waitFor(mc -> ADVANCEMENT_TOASTS.stream().anyMatch(a -> a.id().equals(UNDERCOVER_SLEEPER)), 100);
+		check(ADVANCEMENT_TOASTS.stream().anyMatch(a -> a.id().equals(UNDERCOVER_SLEEPER)
+			&& a.value().display().orElseThrow().title().getString().equals("Undercover Sleeper")), "'Undercover Sleeper' toast shown");
+		check(context.computeOnClient(mc -> mc.player.connection.getAdvancements().get(UNDERCOVER_SLEEPER) != null),
+			"'Undercover Sleeper' stays in the client's advancement tree");
+		// Frames only render while ticks run, so the toast needs some before it has slid in.
+		context.waitTicks(10);
+		sleepRealTime(1500);
+		context.takeScreenshot("undercover_sleeper_toast");
 		wake();
 		check(context.computeOnClient(mc -> !mc.player.isUsingItem()), "shield not left raised after leaving bed");
 

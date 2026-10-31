@@ -1,0 +1,23 @@
+{
+	"parent": "minecraft:adventure/sleep_in_bed",
+	"display": {
+		"icon": {
+			"id": "minecraft:black_bed"
+		},
+		"title": {
+			"text": "Undercover Sleeper"
+		},
+		"description": {
+			"text": "Your spawn point has been compromised."
+		},
+		"frame": "task",
+		"show_toast": true,
+		"announce_to_chat": true,
+		"hidden": false
+	},
+	"criteria": {
+		"set_spawn_sneaking": {
+			"trigger": "minecraft:impossible"
+		}
+	}
+}

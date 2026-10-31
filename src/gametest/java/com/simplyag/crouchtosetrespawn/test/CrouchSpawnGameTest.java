@@ -1,6 +1,7 @@
 package com.simplyag.crouchtosetrespawn.test;
 
 import com.simplyag.crouchtosetrespawn.SpawnHint;
+import com.simplyag.crouchtosetrespawn.UndercoverSleeper;
 import java.util.List;
 import java.util.Set;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
@@ -12,6 +13,7 @@ import net.minecraft.core.GlobalPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -519,6 +521,94 @@ public class CrouchSpawnGameTest {
 			}
 			done(helper, player);
 		});
+	}
+
+	// --- Undercover Sleeper advancement -------------------------------------------------------------------------
+
+	@GameTest(environment = NIGHT)
+	public void undercoverSleeperIsARealAdvancement(GameTestHelper helper) {
+		AdvancementHolder holder = undercoverSleeper(helper);
+		DisplayInfo display = holder.value().display().orElseThrow();
+		helper.assertTrue(display.title().getString().equals("Undercover Sleeper"), "title");
+		helper.assertTrue(display.description().getString().equals("Your spawn point has been compromised."), "description");
+		helper.assertTrue(display.showToast(), "shows a toast");
+		helper.assertFalse(display.hidden(), "listed in the advancements screen");
+		helper.assertTrue(helper.getLevel().getServer().getAdvancements().tree().get(holder).parent().holder().id()
+			.equals(Identifier.withDefaultNamespace("adventure/sleep_in_bed")), "sits under Sweet Dreams");
+		helper.succeed();
+	}
+
+	@GameTest(environment = NIGHT)
+	public void undercoverSleeperOnSneakAtNight(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setShiftKeyDown(true);
+
+		use(player, bed.foot);
+
+		helper.assertTrue(hasUndercoverSleeper(helper, player), "sneak-setting spawn at night earns it");
+		done(helper, player);
+	}
+
+	@GameTest(environment = DAY)
+	public void undercoverSleeperOnSneakDuringDay(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setShiftKeyDown(true);
+
+		use(player, bed.foot);
+
+		helper.assertTrue(hasUndercoverSleeper(helper, player), "sneak-setting spawn during the day earns it");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void undercoverSleeperWithShieldInOffhand(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+		player.setShiftKeyDown(true);
+
+		useOn(player, InteractionHand.MAIN_HAND, bed.foot);
+		useOn(player, InteractionHand.OFF_HAND, bed.foot);
+
+		helper.assertTrue(hasUndercoverSleeper(helper, player), "the held-item fallback earns it too");
+		done(helper, player);
+	}
+
+	@GameTest(environment = NIGHT)
+	public void undercoverSleeperNotOnNormalSleep(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+
+		use(player, bed.foot);
+
+		helper.assertTrue(player.isSleeping(), "normal sleep");
+		helper.assertFalse(hasUndercoverSleeper(helper, player), "a normal sleep doesn't earn it");
+		helper.runAfterDelay(4, () -> done(helper, player));
+	}
+
+	@GameTest(environment = NIGHT)
+	public void undercoverSleeperNotWhenPlacingABlock(GameTestHelper helper) {
+		Bed bed = placeBed(helper, 1);
+		ServerPlayer player = playerBeside(helper, bed);
+		player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STONE));
+		player.setShiftKeyDown(true);
+
+		use(player, bed.foot);
+
+		helper.assertFalse(hasUndercoverSleeper(helper, player), "placing a block doesn't earn it");
+		done(helper, player);
+	}
+
+	static AdvancementHolder undercoverSleeper(GameTestHelper helper) {
+		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(UndercoverSleeper.ADVANCEMENT);
+		helper.assertTrue(holder != null, "Undercover Sleeper should be loaded from the mod's data");
+		return holder;
+	}
+
+	static boolean hasUndercoverSleeper(GameTestHelper helper, ServerPlayer player) {
+		return player.getAdvancements().getOrStartProgress(undercoverSleeper(helper)).isDone();
 	}
 
 	// --- Helpers ----------------------------------------------------------------------------------------------
