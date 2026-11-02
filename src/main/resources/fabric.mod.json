@@ -3,11 +3,17 @@
 	"id": "crouchtosetrespawn",
 	"version": "${version}",
 	"name": "Crouch to Set Respawn",
-	"description": "Sleeping no longer moves your spawn. Sneak + use a bed to set your respawn point there. Server-side only.",
+	"description": "Sleeping no longer moves your spawn. Sneak + use a bed to set your respawn point there, day or night. Server-side only: players don't need to install it.",
 	"authors": [
 		"SimplyAG"
 	],
+	"contact": {
+		"homepage": "https://github.com/SimplyAG/CrouchToSetRespawn",
+		"sources": "https://github.com/SimplyAG/CrouchToSetRespawn",
+		"issues": "https://github.com/SimplyAG/CrouchToSetRespawn/issues"
+	},
 	"license": "MIT",
+	"icon": "assets/crouchtosetrespawn/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
@@ -21,6 +27,6 @@
 		"fabricloader": ">=${loader_version}",
 		"minecraft": "~${minecraft_version}",
 		"java": ">=25",
-		"fabric-api": "*"
+		"fabric-api": ">=0.165.0"
 	}
 }
