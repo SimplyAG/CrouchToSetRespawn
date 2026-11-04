@@ -41,9 +41,9 @@ Set your spawn with sneak + use for the first time to earn **Undercover Sleeper*
 
 ## Requirements
 
-- Minecraft 26.3
+- Minecraft 26.3 or newer
 - Fabric Loader 0.19.5 or newer
-- [Fabric API](https://modrinth.com/mod/fabric-api) 0.165.0 or newer (server side)
+- [Fabric API](https://modrinth.com/mod/fabric-api) (server side, any version for your Minecraft version)
 - Java 25
 
 ## Building
