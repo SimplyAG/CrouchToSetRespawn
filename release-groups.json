@@ -1,0 +1,12 @@
+{
+  "_comment": [
+    "One published jar per group, built from the group's first version (the lead). A version may only join a group",
+    "if (1) its own build compiles to classes byte-identical to the lead's (verifyGroupClasses) and (2) the scenario",
+    "test passes on it (runScenarioTest). Every member compiles at the lead's Java level so the comparison is exact.",
+    "The last group's jar declares '>=lead', so it keeps loading on newer Minecraft until a hook really breaks.",
+    "Never list an untested version."
+  ],
+  "groups": [
+    { "minecraft": ["26.3"] }
+  ]
+}

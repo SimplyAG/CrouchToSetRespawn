@@ -1,0 +1,30 @@
+// Build script for the obfuscated Minecraft targets (before 26.1). Chosen per version in settings.gradle.
+// The mod's code uses Mojang names everywhere, so these targets compile against Mojang's official mappings and the
+// remapping Loom turns the result into the intermediary names Fabric runs on (remapJar).
+
+plugins {
+	id 'dev.kikugie.stonecutter'
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+}
+
+// Release groups and the jar allowlist; sets the ext.ctsr* values used below.
+apply from: rootProject.file('gradle/release-target.gradle')
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = "${project.archives_base_name}-mc${ctsrArchiveSuffix}"
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings loom.officialMojangMappings()
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	// Fabric Loader bundles MixinExtras only from 0.15; ship it inside the jar so @WrapOperation works on any loader.
+	include implementation(annotationProcessor("io.github.llamalad7:mixinextras-fabric:${project.mixinextras_version}"))
+}
+
+// Resources, Java level, jar contents and tests: shared with build.gradle.
+apply from: rootProject.file('gradle/target-common.gradle')

@@ -7,8 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 import net.fabricmc.loader.api.FabricLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
 
 /**
  * config/crouchtosetrespawn.properties, read once at startup. A .properties file so each setting can carry a plain
@@ -19,20 +18,20 @@ public final class ModConfig {
 	static final String SNEAK_WITH_ITEMS_SETS_SPAWN = "sneak_with_items_sets_spawn";
 	static final String SHOW_SPAWN_HINT_POPUP = "show_spawn_hint_popup";
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(CrouchToSetRespawn.MOD_ID);
-	private static final String DEFAULT_FILE = """
-		# Crouch to Set Respawn. Changes take effect after a server restart.
-
-		# Sneak + use a bed while holding something (shield, torch, sword, map...) still sets your spawn.
-		# Items that do something on a bed keep working as normal: blocks get placed,
-		# bone meal, flint and steel and buckets do their thing.
-		# false = vanilla rule: both hands must be empty to use a bed while sneaking.
-		sneak_with_items_sets_spawn=true
-
-		# On a normal (non-sneaking) bed click, tell the player "Bed not set as spawn - Sneak + use to set respawn".
-		# At most once per player per night. The first time ever is a popup, after that it is text above the hotbar.
-		show_spawn_hint_popup=true
-		""";
+	private static final Logger LOGGER = CrouchToSetRespawn.LOGGER;
+	private static final String DEFAULT_FILE = String.join("\n",
+		"# Crouch to Set Respawn. Changes take effect after a server restart.",
+		"",
+		"# Sneak + use a bed while holding something (shield, torch, sword, map...) still sets your spawn.",
+		"# Items that do something on a bed keep working as normal: blocks get placed,",
+		"# bone meal, flint and steel and buckets do their thing.",
+		"# false = vanilla rule: both hands must be empty to use a bed while sneaking.",
+		SNEAK_WITH_ITEMS_SETS_SPAWN + "=true",
+		"",
+		"# On a normal (non-sneaking) bed click, tell the player \"Bed not set as spawn - Sneak + use to set respawn\".",
+		"# At most once per player per night. The first time ever is a popup, after that it is text above the hotbar.",
+		SHOW_SPAWN_HINT_POPUP + "=true",
+		"");
 
 	/** Public and mutable so the game tests can flip them; nothing else writes them after load. */
 	public static boolean sneakWithItemsSetsSpawn = true;
@@ -52,7 +51,7 @@ public final class ModConfig {
 		if (!Files.exists(path)) {
 			try {
 				Files.createDirectories(path.getParent());
-				Files.writeString(path, DEFAULT_FILE, StandardCharsets.UTF_8);
+				Files.write(path, DEFAULT_FILE.getBytes(StandardCharsets.UTF_8));
 			} catch (IOException e) {
 				LOGGER.warn("Couldn't write the default {}; using defaults", path, e);
 			}

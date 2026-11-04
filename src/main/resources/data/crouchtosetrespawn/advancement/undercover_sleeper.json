@@ -2,7 +2,7 @@
 	"parent": "minecraft:adventure/sleep_in_bed",
 	"display": {
 		"icon": {
-			"id": "minecraft:black_bed"
+			"${advancement_icon_key}": "minecraft:black_bed"
 		},
 		"title": {
 			"text": "Undercover Sleeper"

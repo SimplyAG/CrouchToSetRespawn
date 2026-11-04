@@ -5,8 +5,8 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.datafixers.util.Either;
 import com.simplyag.crouchtosetrespawn.SpawnHint;
 import com.simplyag.crouchtosetrespawn.UndercoverSleeper;
+import com.simplyag.crouchtosetrespawn.util.Compat;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Unit;
 import net.minecraft.world.attribute.BedRule;
@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Beds only set spawn on a sneak + use. Everything else in startSleepInBed (range, obstruction, the night-only
- * message, monsters, sleeping) stays vanilla. Nether/End beds explode in AbstractBedBlock.useWithoutItem before this
+ * message, monsters, sleeping) stays vanilla. Nether/End beds explode in the bed block's use method before this
  * method is ever reached, so sneaking can't bypass that.
  */
 @Mixin(ServerPlayer.class)
@@ -40,14 +40,14 @@ abstract class ServerPlayerMixin {
 		// The vanilla rule still has to allow it (straw beds, datapack rules); sneaking only narrows it. The same
 		// local also gates the slept_in_bed advancement trigger, so that follows spawn being set.
 		boolean vanillaSets = original.call(rule, level);
-		boolean sneaking = ((ServerPlayer) (Object) this).isSecondaryUseActive();
+		boolean sneaking = Compat.isSneaking((ServerPlayer) (Object) this);
 		this.crouchtosetrespawn$spawnSkipped = vanillaSets && !sneaking;
 		this.crouchtosetrespawn$spawnSneakSet = vanillaSets && sneaking;
 		return vanillaSets && sneaking;
 	}
 
 	@Inject(method = "startSleepInBed", at = @At("RETURN"))
-	private void crouchtosetrespawn$hint(AbstractBedBlock bedBlock, BlockState bedBlockState, BedRule rule, BlockPos pos,
+	private void crouchtosetrespawn$afterBedUse(AbstractBedBlock bedBlock, BlockState bedBlockState, BedRule rule, BlockPos pos,
 		CallbackInfoReturnable<Either<Player.BedSleepingProblem, Unit>> cir) {
 		boolean skipped = this.crouchtosetrespawn$spawnSkipped;
 		boolean sneakSet = this.crouchtosetrespawn$spawnSneakSet;
@@ -65,16 +65,8 @@ abstract class ServerPlayerMixin {
 		if (sneakSet) {
 			UndercoverSleeper.award(self);
 		}
-		if (!skipped) {
-			return;
+		if (skipped && !Compat.isSpawnAt(self, Compat.level(self).dimension(), pos)) {
+			SpawnHint.maybeShow(self, pos);
 		}
-
-		ServerPlayer.RespawnConfig respawn = self.getRespawnConfig();
-		GlobalPos bed = GlobalPos.of(self.level().dimension(), pos);
-		if (respawn != null && respawn.respawnData().globalPos().equals(bed)) {
-			return;
-		}
-
-		SpawnHint.maybeShow(self, bed);
 	}
 }

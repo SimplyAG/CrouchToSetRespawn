@@ -438,7 +438,7 @@ public class CrouchSpawnGameTest {
 	public void hintTextSkippedIfSpawnSetMeanwhile(GameTestHelper helper) {
 		Bed bed = placeBed(helper, 1);
 		ServerPlayer player = playerBeside(helper, bed);
-		AdvancementHolder seen = helper.getLevel().getServer().getAdvancements().get(SpawnHint.SEEN_ADVANCEMENT);
+		AdvancementHolder seen = helper.getLevel().getServer().getAdvancements().get(Ids.mod(SpawnHint.SEEN_ADVANCEMENT));
 		player.getAdvancements().award(seen, SpawnHint.CRITERION);
 
 		use(player, bed.foot);
@@ -453,7 +453,7 @@ public class CrouchSpawnGameTest {
 	}
 
 	static boolean sawHintText(ServerPlayer player) {
-		return Recorder.messages(player.getUUID()).contains(SpawnHint.ACTION_BAR_TEXT);
+		return Recorder.messages(player.getUUID()).contains(SpawnHint.actionBarText());
 	}
 
 	@GameTest(environment = NIGHT)
@@ -602,7 +602,7 @@ public class CrouchSpawnGameTest {
 	}
 
 	static AdvancementHolder undercoverSleeper(GameTestHelper helper) {
-		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(UndercoverSleeper.ADVANCEMENT);
+		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(Ids.mod(UndercoverSleeper.ADVANCEMENT));
 		helper.assertTrue(holder != null, "Undercover Sleeper should be loaded from the mod's data");
 		return holder;
 	}
@@ -690,7 +690,7 @@ public class CrouchSpawnGameTest {
 	}
 
 	static AdvancementHolder hint(GameTestHelper helper) {
-		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(SpawnHint.ADVANCEMENT);
+		AdvancementHolder holder = helper.getLevel().getServer().getAdvancements().get(Ids.mod(SpawnHint.ADVANCEMENT));
 		helper.assertTrue(holder != null, "hint advancement should be loaded from the mod's data");
 		return holder;
 	}

@@ -29,3 +29,9 @@ logs/
 
 # Config files (user-specific, don't commit)
 config/
+
+# Local test logs
+*.log
+
+# Staged releases (built locally, published by hand)
+release-staging/

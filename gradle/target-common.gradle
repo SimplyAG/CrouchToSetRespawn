@@ -1,0 +1,84 @@
+// Everything both buildscripts share (build.gradle for 26.x, remap.gradle for the obfuscated targets): tests,
+// resources, Java level and jar contents. Applied at the end of each.
+
+// Server game tests (`gradlew :26.3:runGameTest`): the 50 deep tests use test APIs that only exist on the newest
+// Minecraft, so only versions with server_gametest=true get the gametest source set.
+def serverGameTests = (project.findProperty('server_gametest') ?: 'false') == 'true'
+fabricApi {
+	configureTests {
+		createSourceSet = serverGameTests
+		modId = "crouchtosetrespawn-gametest"
+		enableGameTests = serverGameTests
+		enableClientGameTests = false
+		eula = true
+	}
+}
+
+// Every member of a release group compiles at the group lead's Java level, so its classes can be compared byte for
+// byte with the lead's and the lead's jar runs on all of them.
+def javaVersion = ctsrJavaVersion as int
+
+// The advancement files differ only in format between Minecraft versions, so they are one template each, filled in
+// per target. Folder: advancements/ before 1.21. Icon: {"item"} before 1.20.5. Background: a texture path before
+// 1.21.5. The values come from versions/<mc>/gradle.properties (defaults are the newest format).
+def advancementFormat = [
+		advancement_dir       : project.findProperty('advancement_dir') ?: 'advancement',
+		advancement_icon_key  : project.findProperty('advancement_icon_key') ?: 'id',
+		advancement_background: project.findProperty('advancement_background') ?: 'minecraft:gui/advancements/backgrounds/adventure',
+]
+
+processResources {
+	inputs.property "version", project.version
+	inputs.property "minecraft_dep", ctsrMinecraftDepItems
+	inputs.property "java_version", javaVersion
+	inputs.property "loader_floor", project.loader_floor
+	inputs.properties advancementFormat
+
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version,
+				"minecraft_dep": ctsrMinecraftDepItems,
+				"java_version": javaVersion,
+				"loader_floor": project.loader_floor
+	}
+
+	// The shared mixins.json says JAVA_8; Mixin refuses levels the running Java can't do, so set it per target.
+	filesMatching("crouchtosetrespawn.mixins.json") {
+		filter { String line -> line.replace('"JAVA_8"', "\"JAVA_${javaVersion}\"") }
+	}
+
+	filesMatching("data/crouchtosetrespawn/advancement/*.json") {
+		expand advancementFormat
+		path = path.replace('/advancement/', "/${advancementFormat.advancement_dir}/")
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = javaVersion
+	it.options.encoding = "UTF-8"
+	// One fixed javac per target, whatever JDK runs Gradle: javac versions number lambdas differently, which would
+	// make otherwise identical classes differ between a group's members.
+	it.javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+}
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.toVersion(javaVersion)
+	targetCompatibility = JavaVersion.toVersion(javaVersion)
+}
+
+jar {
+	// Each version project has its own directory, so the license comes from the root.
+	from(rootProject.file("LICENSE")) {
+		rename { "${it}_${project.base.archivesName.get()}" }
+	}
+}
+
+tasks.matching { it.name == 'runGameTest' || it.name == 'runScenarioTest' }.configureEach {
+	// The game runs on the target's Java, not whatever JDK runs Gradle.
+	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+}
+
+// Vanilla client join test: only the version it runs on stages the real dedicated server.
+if (project.property('minecraft_version') == rootProject.ext.ctsrVanillaTestVersion) {
+	apply from: rootProject.file('gradle/vanilla-server.gradle')
+}

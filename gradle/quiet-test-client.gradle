@@ -1,0 +1,15 @@
+// Quiet test clients: Minecraft windows started by tests run in the background while the PC is in use.
+// They never take focus and never play sound.
+// Shared setup for the user's Fabric mod projects; apply it from build.gradle:
+//   apply from: "gradle/quiet-test-client.gradle"
+// Minecraft up to 26.2 creates its window with GLFW, which has no environment switch for focus: pair this
+// with a test-only mixin that sets GLFW_FOCUSED / GLFW_FOCUS_ON_SHOW off before glfwCreateWindow
+// (see QuietWindowMixin in the gametest source set).
+
+tasks.matching { it.name == "runClientGameTest" }.configureEach { task ->
+	// SDL (Minecraft 26.3+): show the window without activating it, also when it's raised.
+	task.environment "SDL_WINDOW_ACTIVATE_WHEN_SHOWN", "0"
+	task.environment "SDL_WINDOW_ACTIVATE_WHEN_RAISED", "0"
+	// OpenAL Soft's silent output device: no sound at all, on every Minecraft version.
+	task.environment "ALSOFT_DRIVERS", "null"
+}

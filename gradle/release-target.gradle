@@ -1,0 +1,106 @@
+// Per-target release wiring, applied by build.gradle / remap.gradle right after their plugins block.
+// Sets the ext.ctsr* values the build scripts use afterwards:
+//
+//   ext.ctsrGroupVersions     Minecraft versions served by this target's release group (release-groups.json)
+//   ext.ctsrIsLead            true if this target builds the group's published jar (the group's first version)
+//   ext.ctsrJavaVersion       Java level of the group lead; every member compiles at it, so classes can be compared
+//   ext.ctsrMinecraftDepItems fabric.mod.json "depends.minecraft" items
+//   ext.ctsrReleaseJarFile    the jar that is verified and staged
+//
+//   verifyJarContents         fails if the jar contains anything outside the allowlist (wired into build)
+
+import groovy.json.JsonSlurper
+
+import java.util.zip.ZipFile
+
+def mcVersion = project.property('minecraft_version') as String
+def groups = rootProject.ext.ctsrReleaseGroups
+def releaseGroup = groups.find { it.minecraft.contains(mcVersion) }
+if (releaseGroup == null) throw new GradleException("Minecraft ${mcVersion} is missing from release-groups.json")
+
+def leadVersion = releaseGroup.minecraft[0] as String
+def leadProperties = new Properties()
+rootProject.file("versions/${leadVersion}/gradle.properties").withInputStream { leadProperties.load(it) }
+
+ext.ctsrGroupVersions = releaseGroup.minecraft as List<String>
+ext.ctsrIsLead = leadVersion == mcVersion
+ext.ctsrJavaVersion = Integer.parseInt(leadProperties.getProperty('java_version'))
+// Older groups declare exactly their versions: newer Minecraft has its own jar, and Fabric Loader then shows a clear
+// "needs Minecraft X" message instead of the game crashing on a changed API. The newest group declares ">=lead", so
+// new Minecraft releases keep working without a re-release until one really changes something the mod hooks.
+// Members only build to prove their classes match the lead's, so they declare just their own version.
+def isNewestGroup = releaseGroup.is(groups.last())
+def depItems = !ctsrIsLead ? [mcVersion] : isNewestGroup ? [">=${leadVersion}".toString()] : ctsrGroupVersions
+// Written into fabric.mod.json as ["${minecraft_dep}"], so the unexpanded template is still valid JSON.
+ext.ctsrMinecraftDepItems = depItems.join('","')
+def groupSuffix = ctsrGroupVersions.size() > 1 ? "${ctsrGroupVersions.first()}-${ctsrGroupVersions.last()}" : leadVersion
+ext.ctsrArchiveSuffix = ctsrIsLead ? groupSuffix : mcVersion
+
+def releaseJarTask = tasks.names.contains('remapJar') ? tasks.named('remapJar') : tasks.named('jar')
+ext.ctsrReleaseJarFile = releaseJarTask.flatMap { it.archiveFile }
+tasks.register('ctsrReleaseJar') { dependsOn releaseJarTask }
+
+// Everything a release jar may contain. Anything else (test classes, stray copies of resources) fails the build.
+def jarAllowlist = [
+		~/META-INF\//,
+		~/META-INF\/MANIFEST\.MF/,
+		~/META-INF\/jars\//,
+		~/META-INF\/jars\/mixinextras-fabric-[0-9.]+\.jar/,
+		~/fabric\.mod\.json/,
+		~/crouchtosetrespawn\.mixins\.json/,
+		~/crouchtosetrespawn-refmap\.json/,
+		~/LICENSE_crouchtosetrespawn-mc[0-9.-]+/,
+		~/assets\//,
+		~/assets\/crouchtosetrespawn\//,
+		~/assets\/crouchtosetrespawn\/icon\.png/,
+		~/data\//,
+		~/data\/crouchtosetrespawn\//,
+		~/data\/crouchtosetrespawn\/advancements?\//,
+		~/data\/crouchtosetrespawn\/advancements?\/(spawn_hint|spawn_hint_seen|undercover_sleeper)\.json/,
+		~/com\//,
+		~/com\/simplyag\//,
+		~/com\/simplyag\/crouchtosetrespawn\/([A-Za-z0-9_$]+\/)*/,
+		~/com\/simplyag\/crouchtosetrespawn\/([A-Za-z0-9_$]+\/)*[A-Za-z0-9_$]+\.class/,
+]
+def advancementDir = (project.findProperty('advancement_dir') ?: 'advancement') as String
+def requiredEntries = ['fabric.mod.json', 'crouchtosetrespawn.mixins.json', 'assets/crouchtosetrespawn/icon.png'] +
+		['spawn_hint', 'spawn_hint_seen', 'undercover_sleeper'].collect { "data/crouchtosetrespawn/${advancementDir}/${it}.json".toString() }
+
+def verifyJarContents = tasks.register('verifyJarContents') {
+	group = 'verification'
+	description = 'Fails if the release jar holds files outside the allowlist or misses required ones.'
+	dependsOn releaseJarTask
+	def jarFile = ctsrReleaseJarFile
+	def expectedMixinLevel = "JAVA_${ctsrJavaVersion}"
+	def expectedMinecraft = depItems
+	def expectedVersion = project.version.toString()
+	inputs.file(jarFile)
+	doLast {
+		def problems = []
+		new ZipFile(jarFile.get().asFile).withCloseable { zip ->
+			def names = zip.entries().collect { it.name }
+			names.findAll { n -> !jarAllowlist.any { n ==~ it } }.each { problems << "unexpected entry: ${it}" }
+			requiredEntries.findAll { !names.contains(it) }.each { problems << "missing entry: ${it}" }
+			if (!names.any { it.startsWith('LICENSE_') }) problems << 'missing LICENSE'
+			if (names.contains('fabric.mod.json')) {
+				def fmj = new JsonSlurper().parse(zip.getInputStream(zip.getEntry('fabric.mod.json')))
+				if (fmj.version != expectedVersion) problems << "fabric.mod.json version ${fmj.version} != ${expectedVersion}"
+				if (fmj.depends.minecraft != expectedMinecraft) problems << "fabric.mod.json minecraft ${fmj.depends.minecraft} != ${expectedMinecraft}"
+			}
+			if (names.contains('crouchtosetrespawn.mixins.json')) {
+				def level = new JsonSlurper().parse(zip.getInputStream(zip.getEntry('crouchtosetrespawn.mixins.json'))).compatibilityLevel
+				if (level != expectedMixinLevel) problems << "mixin compatibilityLevel ${level} != ${expectedMixinLevel}"
+			}
+			// Every advancement file must parse as JSON after the per-version template expansion.
+			names.findAll { it.startsWith('data/') && it.endsWith('.json') }.each { name ->
+				try {
+					new JsonSlurper().parse(zip.getInputStream(zip.getEntry(name)))
+				} catch (Exception e) {
+					problems << "${name} is not valid JSON: ${e.message}"
+				}
+			}
+		}
+		if (problems) throw new GradleException("${jarFile.get().asFile.name}:\n  " + problems.join('\n  '))
+	}
+}
+tasks.named('build') { dependsOn verifyJarContents }

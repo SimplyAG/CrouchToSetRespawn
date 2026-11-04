@@ -1,7 +1,7 @@
 {
 	"display": {
 		"icon": {
-			"id": "minecraft:red_bed"
+			"${advancement_icon_key}": "minecraft:red_bed"
 		},
 		"title": {
 			"text": "Bed not set as spawn: Sneak + use to set respawn"
@@ -9,7 +9,7 @@
 		"description": {
 			"text": "Sneak + use to set respawn"
 		},
-		"background": "minecraft:gui/advancements/backgrounds/adventure",
+		"background": "${advancement_background}",
 		"frame": "task",
 		"show_toast": true,
 		"announce_to_chat": false,

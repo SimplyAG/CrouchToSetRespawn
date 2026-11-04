@@ -1,0 +1,32 @@
+plugins {
+	id "dev.kikugie.stonecutter"
+}
+// The version the IDE and the plain src/ files are switched to. Switch with: ./gradlew "Set active project to 26.2"
+stonecutter.active "26.3"
+
+// Which Minecraft versions share one published jar. Read here, before the version projects are configured,
+// so every target sees the same groups.
+ext.ctsrReleaseGroups = new groovy.json.JsonSlurper().parse(file('release-groups.json')).groups
+
+// The Minecraft version the vanilla client join test runs on (gradlew vanillaClientTest).
+ext.ctsrVanillaTestVersion = '26.3'
+
+// verifyGroupClasses, stageRelease
+apply from: 'gradle/release-root.gradle'
+
+tasks.register('vanillaClientTest') {
+	group = 'verification'
+	description = 'Joins a real dedicated server running this mod with a client that doesn\'t have it.'
+	dependsOn ':vanilla-client-test:runClientGameTest'
+}
+
+// Scenario runs each boot a dedicated server on the same world folder layout, so run them one after another.
+gradle.projectsEvaluated {
+	def previous = null
+	subprojects.each { p ->
+		def test = p.tasks.findByName('runScenarioTest')
+		if (test == null) return
+		if (previous != null) test.mustRunAfter(previous)
+		previous = test
+	}
+}

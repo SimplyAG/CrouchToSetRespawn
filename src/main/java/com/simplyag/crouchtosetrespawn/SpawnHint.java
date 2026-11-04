@@ -1,20 +1,16 @@
 package com.simplyag.crouchtosetrespawn;
 
+import com.simplyag.crouchtosetrespawn.util.Compat;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.core.GlobalPos;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.minecraft.world.level.Level;
 
 /**
  * The "Sneak + use to set respawn" hint, at most once per player per night. A player's first ever hint is a toast;
@@ -25,12 +21,15 @@ import org.slf4j.LoggerFactory;
  * flushed to the client. Hidden and not done, it is never sent, so it never shows up in the advancements screen, and
  * announce_to_chat is false so nothing goes to chat. "First ever" is stored in the player's own advancement file by
  * spawn_hint_seen, which has no display, so clients never receive it.
+ *
+ * <p>Driven by the mod's own server hooks (MinecraftServerMixin, PlayerListMixin), not Fabric API events, so it
+ * works the same on every Minecraft version.
  */
 public final class SpawnHint {
-	public static final Identifier ADVANCEMENT = CrouchToSetRespawn.id("spawn_hint");
-	public static final Identifier SEEN_ADVANCEMENT = CrouchToSetRespawn.id("spawn_hint_seen");
+	public static final String ADVANCEMENT = "spawn_hint";
+	public static final String SEEN_ADVANCEMENT = "spawn_hint_seen";
 	public static final String CRITERION = "hint";
-	public static final Component ACTION_BAR_TEXT = Component.literal("Bed not set as spawn - Sneak + use to set respawn");
+	public static final String ACTION_BAR_STRING = "Bed not set as spawn - Sneak + use to set respawn";
 	/** Ticks between grant and revoke. Two guarantees one ServerPlayer.doTick flush sends the done state. */
 	static final int REVOKE_DELAY = 2;
 	/**
@@ -39,7 +38,6 @@ public final class SpawnHint {
 	 */
 	public static final int ACTION_BAR_DELAY = 30;
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(CrouchToSetRespawn.MOD_ID);
 	/** Night index each player last saw the hint in. In memory only: a restart just lets it show once more. */
 	private static final Map<UUID, Long> LAST_NIGHT_SHOWN = new HashMap<>();
 	/** Players with the advancement currently granted, and the server tick to revoke it on. */
@@ -47,56 +45,67 @@ public final class SpawnHint {
 	private static final Map<UUID, PendingText> PENDING_TEXT = new HashMap<>();
 	private static boolean warnedMissing;
 
-	private record PendingText(int tick, GlobalPos bed) {
+	private static final class PendingText {
+		final int tick;
+		final ResourceKey<Level> dimension;
+		final BlockPos bed;
+
+		PendingText(int tick, ResourceKey<Level> dimension, BlockPos bed) {
+			this.tick = tick;
+			this.dimension = dimension;
+			this.bed = bed;
+		}
 	}
 
 	private SpawnHint() {
 	}
 
-	static void init() {
-		ServerTickEvents.END_SERVER_TICK.register(server -> {
-			revokeDue(server);
-			sendTextDue(server);
-		});
-		// Fires in PlayerList.placeNewPlayer, on the server thread. Leaving is handled by PlayerListMixin.
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> revoke(handler.getPlayer()));
-		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
-			LAST_NIGHT_SHOWN.clear();
-			PENDING_REVOKE.clear();
-			PENDING_TEXT.clear();
-		});
+	public static Component actionBarText() {
+		return Compat.literal(ACTION_BAR_STRING);
+	}
+
+	/** End of every server tick. */
+	public static void tick(MinecraftServer server) {
+		revokeDue(server);
+		sendTextDue(server);
+	}
+
+	/** Server stopped (single player can start another world in the same game). */
+	public static void reset() {
+		LAST_NIGHT_SHOWN.clear();
+		PENDING_REVOKE.clear();
+		PENDING_TEXT.clear();
 	}
 
 	/**
 	 * Each index runs noon to noon, so it holds exactly one night: clicking again the same night, or the morning
 	 * after sleeping through it, doesn't repeat the hint, but the next evening does.
 	 */
-	public static long nightIndex(long clockTime) {
-		return Math.floorDiv(clockTime + 18000L, 24000L);
+	public static long nightIndex(long dayTime) {
+		return Math.floorDiv(dayTime + 18000L, 24000L);
 	}
 
 	/** Called when a normal (non-sneaking) bed use skipped a spawn change vanilla would have made. */
-	public static void maybeShow(ServerPlayer player, GlobalPos bed) {
+	public static void maybeShow(ServerPlayer player, BlockPos bed) {
 		if (!ModConfig.showSpawnHintPopup) {
 			return;
 		}
 
-		long night = nightIndex(player.level().getDefaultClockTime());
+		long night = nightIndex(Compat.dayTime(Compat.level(player)));
 		Long last = LAST_NIGHT_SHOWN.get(player.getUUID());
 		if (last != null && last == night) {
 			return;
 		}
 
-		MinecraftServer server = player.level().getServer();
+		MinecraftServer server = Compat.server(player);
 		LAST_NIGHT_SHOWN.put(player.getUUID(), night);
-		AdvancementHolder holder = holder(server, ADVANCEMENT);
-		AdvancementHolder seen = holder(server, SEEN_ADVANCEMENT);
-		if (holder != null && seen != null && !player.getAdvancements().getOrStartProgress(seen).isDone()) {
-			player.getAdvancements().award(seen, CRITERION);
-			player.getAdvancements().award(holder, CRITERION);
+		if (advancementsLoaded(server) && !Compat.isDone(player, SEEN_ADVANCEMENT)) {
+			Compat.award(player, SEEN_ADVANCEMENT, CRITERION);
+			Compat.award(player, ADVANCEMENT, CRITERION);
 			PENDING_REVOKE.put(player.getUUID(), server.getTickCount() + REVOKE_DELAY);
 		} else {
-			PENDING_TEXT.put(player.getUUID(), new PendingText(server.getTickCount() + ACTION_BAR_DELAY, bed));
+			PENDING_TEXT.put(player.getUUID(),
+				new PendingText(server.getTickCount() + ACTION_BAR_DELAY, Compat.level(player).dimension(), bed));
 		}
 	}
 
@@ -105,20 +114,16 @@ public final class SpawnHint {
 		Iterator<Map.Entry<UUID, PendingText>> it = PENDING_TEXT.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry<UUID, PendingText> entry = it.next();
-			if (now >= entry.getValue().tick()) {
+			PendingText pending = entry.getValue();
+			if (now >= pending.tick) {
 				it.remove();
 				ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
-				if (player != null && !isSpawnAt(player, entry.getValue().bed())) {
-					player.sendOverlayMessage(ACTION_BAR_TEXT);
+				// The player may have sneak-clicked this bed while the text was waiting; then it no longer applies.
+				if (player != null && !Compat.isSpawnAt(player, pending.dimension, pending.bed)) {
+					Compat.sendOverlay(player, actionBarText());
 				}
 			}
 		}
-	}
-
-	/** The player may have sneak-clicked this bed while the text was waiting; then it no longer applies. */
-	private static boolean isSpawnAt(ServerPlayer player, GlobalPos bed) {
-		ServerPlayer.RespawnConfig respawn = player.getRespawnConfig();
-		return respawn != null && respawn.respawnData().globalPos().equals(bed);
 	}
 
 	private static void revokeDue(MinecraftServer server) {
@@ -147,18 +152,18 @@ public final class SpawnHint {
 	}
 
 	private static void revokeNow(ServerPlayer player) {
-		AdvancementHolder holder = holder(player.level().getServer(), ADVANCEMENT);
-		if (holder != null && player.getAdvancements().getOrStartProgress(holder).isDone()) {
-			player.getAdvancements().revoke(holder, CRITERION);
+		if (Compat.isDone(player, ADVANCEMENT)) {
+			Compat.revoke(player, ADVANCEMENT, CRITERION);
 		}
 	}
 
-	private static AdvancementHolder holder(MinecraftServer server, Identifier id) {
-		AdvancementHolder holder = server.getAdvancements().get(id);
-		if (holder == null && !warnedMissing) {
+	private static boolean advancementsLoaded(MinecraftServer server) {
+		boolean loaded = Compat.hasAdvancement(server, ADVANCEMENT) && Compat.hasAdvancement(server, SEEN_ADVANCEMENT);
+		if (!loaded && !warnedMissing) {
 			warnedMissing = true;
-			LOGGER.warn("Advancement {} is missing (mod data pack disabled?); the sneak-to-set-spawn hint will be text only", id);
+			CrouchToSetRespawn.LOGGER.warn("The {} advancements are missing (mod data pack disabled?); the sneak-to-set-spawn hint will be text only",
+				CrouchToSetRespawn.MOD_ID);
 		}
-		return holder;
+		return loaded;
 	}
 }

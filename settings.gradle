@@ -4,11 +4,34 @@ pluginManagement {
 			name = 'Fabric'
 			url = 'https://maven.fabricmc.net/'
 		}
+		maven {
+			name = 'Stonecutter'
+			url = 'https://maven.kikugie.dev/releases'
+		}
 		mavenCentral()
 		gradlePluginPortal()
 	}
 }
 
+plugins {
+	id 'dev.kikugie.stonecutter' version '0.7.11'
+}
+
+// One source tree, one Gradle project per Minecraft version (versions/<mc>/gradle.properties).
+// Version-specific code is written as Stonecutter comments, e.g. //? if >=1.21.5 { ... } in src/.
+// Which versions share a published jar is decided by release-groups.json, not here.
+stonecutter {
+	kotlinController = false
+	centralScript = 'build.gradle'
+	create(rootProject) {
+		// Obfuscated Minecraft (before 26.1): remap.gradle compiles against Mojang's official mappings and remaps the
+		// jar to intermediary.
+		// Unobfuscated Minecraft (26.1+): Mojang names natively, non-remapping Loom (build.gradle).
+		versions '26.3'
+	}
+}
+
 rootProject.name = 'crouchtosetrespawn'
 
+// A client WITHOUT the mod, joining a real dedicated server that runs it (gradlew vanillaClientTest).
 include 'vanilla-client-test'

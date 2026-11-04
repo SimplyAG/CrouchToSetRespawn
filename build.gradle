@@ -1,178 +1,28 @@
-// Minecraft 26.x ships unobfuscated, so this is the non-remapping Loom toolchain:
-//   - plugin is net.fabricmc.fabric-loom (no Yarn, no intermediary, no `mappings` line)
-//   - plain implementation configurations, the release artifact is `jar`
-//   - Java 25
-// Same toolchain as Slide.
+// Build script for the unobfuscated Minecraft targets (26.1+): Mojang names natively, non-remapping Loom, no
+// mappings. The obfuscated targets use remap.gradle instead (chosen in settings.gradle).
 
 plugins {
-	id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT'
+	id 'dev.kikugie.stonecutter'
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
-version = "${project.mod_version}+mc${project.minecraft_version}"
+// Release groups and the jar allowlist; sets the ext.ctsr* values used below.
+apply from: rootProject.file('gradle/release-target.gradle')
+
+version = project.mod_version
 group = project.maven_group
 
 base {
-	archivesName = project.archives_base_name
+	archivesName = "${project.archives_base_name}-mc${ctsrArchiveSuffix}"
 }
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	// Fabric Loader bundles MixinExtras only from 0.15; ship it inside the jar so @WrapOperation works on any loader.
+	include implementation(annotationProcessor("io.github.llamalad7:mixinextras-fabric:${project.mixinextras_version}"))
 }
 
-// Server game tests live in their own `gametest` source set and are never part of the release jar.
-// `gradlew runGameTest` runs them on a headless dedicated server.
-fabricApi {
-	configureTests {
-		createSourceSet = true
-		modId = "crouchtosetrespawn-gametest"
-		enableGameTests = true
-		enableClientGameTests = false
-		eula = true
-	}
-}
-
-processResources {
-	inputs.property "version", project.mod_version
-	inputs.property "minecraft_version", project.minecraft_version
-	inputs.property "loader_version", project.loader_version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": project.mod_version,
-			   "minecraft_version": project.minecraft_version,
-			   "loader_version": project.loader_version
-	}
-}
-
-tasks.withType(JavaCompile).configureEach {
-	it.options.release = 25
-}
-
-java {
-	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_25
-	targetCompatibility = JavaVersion.VERSION_25
-}
-
-jar {
-	from("LICENSE") {
-		rename { "${it}_${project.base.archivesName.get()}"}
-	}
-}
-
-// --- Vanilla client join test (test-only, nothing here goes into the release jar) --------------------------------
-// `gradlew vanillaClientTest` stages a real Fabric dedicated server in build/vanilla-server (official server
-// launcher, the release jar and Fabric API in mods/, offline mode, flat world), starts it as its own process, then
-// runs the :vanilla-client-test client, which does NOT have this mod, against it, and stops the server afterwards.
-// Loom always launches client game tests as Player0; ops.json uses its offline UUID so the test can run setup commands.
-ext.vanillaTesterName = "Player0"
-ext.vanillaServerPort = 25599
-def installerVersion = "1.1.2"
-def vanillaServerDir = layout.buildDirectory.dir("vanilla-server")
-
-configurations {
-	vanillaServerMods {
-		transitive = false
-	}
-}
-
-dependencies {
-	vanillaServerMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-}
-
-def serverJava = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
-
-tasks.register("startVanillaServer") {
-	group = "verification"
-	description = "Stages and starts a real Fabric dedicated server with the release jar, for the vanilla client test."
-	dependsOn tasks.named("jar")
-	doLast {
-		File dir = vanillaServerDir.get().asFile
-		project.delete(new File(dir, "world"), new File(dir, "mods"), new File(dir, "config"), new File(dir, "logs"), new File(dir, "console.log"))
-		new File(dir, "mods").mkdirs()
-
-		File launcher = new File(dir, "fabric-server-launch.jar")
-		if (!launcher.isFile()) {
-			String url = "https://meta.fabricmc.net/v2/versions/loader/${project.minecraft_version}/${project.loader_version}/${installerVersion}/server/jar"
-			new URL(url).withInputStream { input -> launcher.withOutputStream { it << input } }
-		}
-
-		project.copy {
-			from tasks.named("jar")
-			from configurations.vanillaServerMods
-			into new File(dir, "mods")
-		}
-		new File(dir, "eula.txt").text = "eula=true\n"
-		new File(dir, "server.properties").text = [
-			"online-mode=false", "server-port=${vanillaServerPort}", "level-type=minecraft\\:flat", "gamemode=survival",
-			"difficulty=peaceful", "spawn-protection=0", "spawn-monsters=false", "enforce-secure-profile=false", "white-list=false",
-			"generator-settings={\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:dirt\",\"height\":2},{\"block\":\"minecraft:grass_block\",\"height\":1}],\"biome\":\"minecraft:plains\"}", "motd=Crouch to Set Respawn test"
-		].join("\n") + "\n"
-		String uuid = UUID.nameUUIDFromBytes("OfflinePlayer:${vanillaTesterName}".getBytes("UTF-8")).toString()
-		new File(dir, "ops.json").text = """[{"uuid":"${uuid}","name":"${vanillaTesterName}","level":4,"bypassesPlayerLimit":false}]\n"""
-
-		File console = new File(dir, "console.log")
-		Process process = new ProcessBuilder(serverJava.get().executablePath.asFile.absolutePath, "-Xmx2G", "-jar", launcher.name, "nogui")
-			.directory(dir).redirectErrorStream(true).redirectOutput(console).start()
-		rootProject.ext.vanillaServerProcess = process
-
-		long deadline = System.currentTimeMillis() + 300_000
-		while (!(console.isFile() && console.text.contains("Done ("))) {
-			if (!process.isAlive()) {
-				throw new GradleException("Vanilla test server exited early; see ${console}")
-			}
-			if (System.currentTimeMillis() > deadline) {
-				process.destroyForcibly()
-				throw new GradleException("Vanilla test server didn't start within 5 minutes; see ${console}")
-			}
-			Thread.sleep(500)
-		}
-		if (!console.text.contains("crouchtosetrespawn")) {
-			process.destroyForcibly()
-			throw new GradleException("Crouch to Set Respawn didn't load on the test server; see ${console}")
-		}
-		println "Vanilla test server is up on port ${vanillaServerPort}"
-	}
-}
-
-tasks.register("stopVanillaServer") {
-	group = "verification"
-	description = "Stops the vanilla client test server and checks its log."
-	doLast {
-		Process process = rootProject.ext.has("vanillaServerProcess") ? rootProject.ext.vanillaServerProcess : null
-		if (process == null) {
-			return
-		}
-		if (process.isAlive()) {
-			process.outputStream.withWriter { it.write("stop\n") }
-			if (!process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)) {
-				process.destroyForcibly()
-			}
-		}
-		File console = new File(vanillaServerDir.get().asFile, "console.log")
-		String log = console.text
-		if (!log.contains("${vanillaTesterName} joined the game")) {
-			throw new GradleException("The vanilla client never joined the test server; see ${console}")
-		}
-		File config = new File(vanillaServerDir.get().asFile, "config/crouchtosetrespawn.properties")
-		if (!config.isFile() || !config.text.contains("sneak_with_items_sets_spawn=true") || !config.text.contains("show_spawn_hint_popup=true")) {
-			throw new GradleException("The server didn't write the default ${config}")
-		}
-		// Startup-only OS noise (Windows perf counters via oshi) logs on the main thread; anything from the
-		// running server, or anything naming the mod, counts.
-		def problems = log.readLines().findAll {
-			it.contains("[Server thread/ERROR]") || it.contains("crouchtosetrespawn") && (it.contains("ERROR") || it.contains("WARN") || it.contains("Exception"))
-		}
-		if (!problems.isEmpty()) {
-			throw new GradleException("Test server logged errors:\n" + problems.join("\n"))
-		}
-	}
-}
-
-tasks.register("vanillaClientTest") {
-	group = "verification"
-	description = "Joins a real dedicated server running this mod with a client that doesn't have it."
-	dependsOn ":vanilla-client-test:runClientGameTest"
-}
+// Resources, Java level, jar contents and tests: shared with remap.gradle.
+apply from: rootProject.file('gradle/target-common.gradle')

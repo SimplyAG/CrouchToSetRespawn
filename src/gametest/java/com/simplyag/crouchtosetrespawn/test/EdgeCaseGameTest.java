@@ -131,7 +131,7 @@ public class EdgeCaseGameTest {
 		player.connection.onDisconnect(new DisconnectionDetails(Component.literal("test logout")));
 
 		ServerPlayer rejoined = join(helper, profile);
-		AdvancementHolder seen = helper.getLevel().getServer().getAdvancements().get(SpawnHint.SEEN_ADVANCEMENT);
+		AdvancementHolder seen = helper.getLevel().getServer().getAdvancements().get(Ids.mod(SpawnHint.SEEN_ADVANCEMENT));
 		helper.assertTrue(rejoined.getAdvancements().getOrStartProgress(seen).isDone(), "the toast is remembered in the save");
 		done(helper, rejoined);
 	}

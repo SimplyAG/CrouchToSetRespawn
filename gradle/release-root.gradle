@@ -1,0 +1,133 @@
+// Release tooling across all targets. Applied from stonecutter.gradle (the root project only).
+//
+//   verifyGroupClasses  every member of a release group compiled to byte-identical classes (the evidence that one
+//                       jar can serve the whole group)
+//   stageRelease        copies each group's jar into release-staging/<mod_version>/ with a hash manifest.
+//                       Refuses unless the same invocation cleaned every target, and never overwrites a staged release.
+
+import groovy.json.JsonOutput
+
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+
+def releaseGroups = rootProject.ext.ctsrReleaseGroups
+def modVersion = rootProject.property('mod_version') as String
+def stagingDir = rootProject.layout.projectDirectory.dir("release-staging/${modVersion}")
+
+static String ctsrDigest(File file, String algorithm) {
+	def md = MessageDigest.getInstance(algorithm)
+	file.withInputStream { input ->
+		byte[] buffer = new byte[65536]
+		int read
+		while ((read = input.read(buffer)) > 0) md.update(buffer, 0, read)
+	}
+	md.digest().encodeHex().toString()
+}
+
+static Map<String, byte[]> ctsrClassEntries(File jar) {
+	def classes = new TreeMap<String, byte[]>()
+	new ZipFile(jar).withCloseable { zip ->
+		zip.entries().each { entry ->
+			if (entry.name.endsWith('.class')) classes[entry.name] = zip.getInputStream(entry).bytes
+		}
+	}
+	classes
+}
+
+static String ctsrGit(File dir, String... args) {
+	def process = (['git'] + args.toList()).execute(null, dir)
+	def out = process.text.trim()
+	if (process.waitFor() != 0) throw new GradleException("git ${args.join(' ')} failed")
+	out
+}
+
+tasks.register('verifyGroupClasses') {
+	group = 'release'
+	description = 'Checks that every member of each release group compiles to byte-identical classes.'
+	releaseGroups.each { g -> g.minecraft.each { v -> dependsOn(":${v}:ctsrReleaseJar") } }
+	def reportFile = layout.buildDirectory.file('release/group-classes.txt')
+	outputs.upToDateWhen { false }
+	doLast {
+		def report = new StringBuilder()
+		def failures = []
+		releaseGroups.each { g ->
+			def lead = g.minecraft[0]
+			def leadClasses = ctsrClassEntries(project(":${lead}").ext.ctsrReleaseJarFile.get().asFile)
+			g.minecraft.drop(1).each { member ->
+				def memberClasses = ctsrClassEntries(project(":${member}").ext.ctsrReleaseJarFile.get().asFile)
+				def problems = []
+				(leadClasses.keySet() + memberClasses.keySet()).each { name ->
+					if (!leadClasses.containsKey(name)) problems << "only in ${member}: ${name}"
+					else if (!memberClasses.containsKey(name)) problems << "only in ${lead}: ${name}"
+					else if (!Arrays.equals(leadClasses[name], memberClasses[name])) problems << "differs: ${name}"
+				}
+				if (problems) {
+					failures << "${lead} vs ${member}"
+					report << "MISMATCH ${lead} vs ${member}\n" << problems.collect { "    ${it}" }.join('\n') << '\n'
+				} else {
+					report << "identical ${lead} vs ${member} (${leadClasses.size()} classes)\n"
+				}
+			}
+			if (g.minecraft.size() == 1) report << "single    ${lead}\n"
+		}
+		def out = reportFile.get().asFile
+		out.parentFile.mkdirs()
+		out.text = report.toString()
+		logger.lifecycle(report.toString())
+		if (failures) throw new GradleException("Release groups are not byte-identical: ${failures.join(', ')}. See ${out}")
+	}
+}
+
+tasks.register('stageRelease') {
+	group = 'release'
+	description = "Copies each release group's jar into release-staging/${modVersion} and writes manifest.json."
+	dependsOn 'verifyGroupClasses'
+	releaseGroups.each { g -> dependsOn(":${g.minecraft[0]}:verifyJarContents") }
+	outputs.upToDateWhen { false }
+	doFirst {
+		def notCleaned = releaseGroups.collectMany { it.minecraft }.findAll { v -> !gradle.taskGraph.hasTask(":${v}:clean") }
+		if (notCleaned) {
+			throw new GradleException("stageRelease must run in the same invocation as clean for every target " +
+					"(missing: ${notCleaned.join(', ')}). Use: gradlew clean build stageRelease")
+		}
+		def dir = stagingDir.asFile
+		if (dir.exists() && dir.listFiles()) {
+			throw new GradleException("${dir} already holds a staged release. Staged files are never overwritten; " +
+					"move it aside yourself if you really mean to restage.")
+		}
+	}
+	doLast {
+		def dir = stagingDir.asFile
+		dir.mkdirs()
+		def entries = releaseGroups.collect { g ->
+			def lead = project(":${g.minecraft[0]}")
+			File jar = lead.ext.ctsrReleaseJarFile.get().asFile
+			File staged = new File(dir, jar.name)
+			java.nio.file.Files.copy(jar.toPath(), staged.toPath())
+			def jarEntries = new ZipFile(staged).withCloseable { zip -> zip.entries().collect { it.name }.sort() }
+			[
+					target           : lead.name,
+					file             : staged.name,
+					size             : staged.length(),
+					sha1             : ctsrDigest(staged, 'SHA-1'),
+					sha256           : ctsrDigest(staged, 'SHA-256'),
+					sha512           : ctsrDigest(staged, 'SHA-512'),
+					minecraftVersions: g.minecraft,
+					javaVersion      : lead.ext.ctsrJavaVersion as int,
+					jarEntries       : jarEntries,
+			]
+		}
+		def manifest = [
+				modVersion: modVersion,
+				gitCommit : ctsrGit(rootDir, 'rev-parse', 'HEAD'),
+				gitTree   : ctsrGit(rootDir, 'rev-parse', 'HEAD^{tree}'),
+				gitDirty  : !ctsrGit(rootDir, 'status', '--porcelain', '--untracked-files=no').isEmpty(),
+				gradle    : gradle.gradleVersion,
+				stagedAt  : new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX"),
+				files     : entries,
+		]
+		new File(dir, 'manifest.json').text = JsonOutput.prettyPrint(JsonOutput.toJson(manifest))
+		logger.lifecycle("Staged ${entries.size()} files in ${dir}")
+		entries.each { logger.lifecycle("  ${it.file}  sha256=${it.sha256}  mc=${it.minecraftVersions.join(',')}") }
+	}
+}

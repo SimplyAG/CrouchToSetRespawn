@@ -19,7 +19,7 @@ abstract class PlayerAdvancementsMixin {
 
 	@Inject(method = "award", at = @At("RETURN"))
 	private void crouchtosetrespawn_test$countHint(AdvancementHolder holder, String criterion, CallbackInfoReturnable<Boolean> cir) {
-		if (cir.getReturnValueZ() && holder.id().equals(SpawnHint.ADVANCEMENT)) {
+		if (cir.getReturnValueZ() && holder.id().equals(com.simplyag.crouchtosetrespawn.test.Ids.mod(SpawnHint.ADVANCEMENT))) {
 			Recorder.HINT_GRANTS.computeIfAbsent(this.player.getUUID(), id -> new AtomicInteger()).incrementAndGet();
 		}
 	}

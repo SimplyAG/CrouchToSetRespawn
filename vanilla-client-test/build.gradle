@@ -1,15 +1,22 @@
 // A client that does NOT have Crouch to Set Respawn installed. Its only mod is this test driver (plus Fabric API to
-// run client game tests), and it joins the real dedicated server the root project starts, the way any vanilla
+// run client game tests), and it joins the real dedicated server the :<mc> project starts, the way any vanilla
 // client would. Run it with `gradlew vanillaClientTest` from the root, never on its own.
 
 plugins {
-	id 'net.fabricmc.fabric-loom'
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
+// Same Minecraft, loader and Fabric API as the server it joins.
+def serverVersion = rootProject.ext.ctsrVanillaTestVersion
+def serverProject = ":${serverVersion}"
+def target = new Properties()
+rootProject.file("versions/${serverVersion}/gradle.properties").withInputStream { target.load(it) }
+def javaVersion = target.getProperty('java_version') as int
+
 dependencies {
-	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
-	implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
-	implementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_version}"
+	minecraft "com.mojang:minecraft:${target.getProperty('minecraft_version')}"
+	implementation "net.fabricmc:fabric-loader:${target.getProperty('loader_version')}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${target.getProperty('fabric_version')}"
 }
 
 fabricApi {
@@ -22,10 +29,16 @@ fabricApi {
 	}
 }
 
+// No focus stealing, no sound: the PC is in use while tests run.
+apply from: rootProject.file('gradle/quiet-test-client.gradle')
+
+evaluationDependsOn(serverProject)
+
 tasks.named("runClientGameTest") {
-	systemProperty "vanillaclienttest.server", "127.0.0.1:${rootProject.ext.vanillaServerPort}"
-	dependsOn ":startVanillaServer"
-	finalizedBy ":stopVanillaServer"
+	systemProperty "vanillaclienttest.server", "127.0.0.1:${project(serverProject).ext.vanillaServerPort}"
+	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+	dependsOn "${serverProject}:startVanillaServer"
+	finalizedBy "${serverProject}:stopVanillaServer"
 }
 
 // Only `gradlew vanillaClientTest` runs it: it needs the staged server, so keep it out of `build`.
@@ -34,10 +47,10 @@ tasks.named("check") {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 25
+	it.options.release = javaVersion
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_25
-	targetCompatibility = JavaVersion.VERSION_25
+	sourceCompatibility = JavaVersion.toVersion(javaVersion)
+	targetCompatibility = JavaVersion.toVersion(javaVersion)
 }
