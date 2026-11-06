@@ -11,7 +11,9 @@ import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.MinecraftServer;
@@ -68,6 +70,28 @@ public final class ScenarioRunner {
 	}
 
 	private ScenarioRunner() {
+	}
+
+	// --- What the mod sent (CompatSpyMixin) -------------------------------------------------------------------
+
+	private static final Map<String, Integer> SENT = new HashMap<>();
+
+	public static void recordAward(ServerPlayer player, String path) {
+		SENT.merge(player.getScoreboardName() + " award " + path, 1, Integer::sum);
+	}
+
+	public static void recordOverlay(ServerPlayer player, String text) {
+		SENT.merge(player.getScoreboardName() + " overlay " + text, 1, Integer::sum);
+	}
+
+	/** How many hint toasts the player has been shown. */
+	private static int hintToasts(ServerPlayer player) {
+		return SENT.getOrDefault(player.getScoreboardName() + " award " + SpawnHint.ADVANCEMENT, 0);
+	}
+
+	/** How many times the hint text has appeared above the player's hotbar. */
+	private static int hintTexts(ServerPlayer player) {
+		return SENT.getOrDefault(player.getScoreboardName() + " overlay " + SpawnHint.ACTION_BAR_STRING, 0);
 	}
 
 	/** End of every server tick (ServerTickMixin). */
@@ -177,6 +201,33 @@ public final class ScenarioRunner {
 		}, null);
 
 		netherScenario();
+
+		// Clicking over and over must not spam the hint: a toast only the first time ever, then at most one line of
+		// text a night. Daytime clicks, so the player stays out of bed and can click again.
+		scenario("repeated normal use shows the hint at most once a night", 9, false, true,
+			new Stage(3, (server, p, bed) -> {
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+				check(hintToasts(p) == 1, "three clicks show one toast (saw " + hintToasts(p) + ")");
+			}),
+			new Stage(SpawnHint.ACTION_BAR_DELAY + 5, (server, p, bed) -> {
+				check(!Compat.isDone(p, SpawnHint.ADVANCEMENT), "toast revoked again");
+				check(hintTexts(p) == 0, "no text the same day as the toast (saw " + hintTexts(p) + ")");
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+				check(hintToasts(p) == 1, "a fourth click the same day shows no toast");
+				// The next day: the hint is due again, now as text.
+				TestCompat.command(server, "time add 24000");
+			}),
+			new Stage(3, (server, p, bed) -> {
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+				use(p, InteractionHand.MAIN_HAND, bed.foot);
+			}),
+			new Stage(SpawnHint.ACTION_BAR_DELAY + 5, (server, p, bed) -> {
+				check(hintToasts(p) == 1, "only the first ever hint is a toast (saw " + hintToasts(p) + ")");
+				check(hintTexts(p) == 1, "two clicks the next day show the text once (saw " + hintTexts(p) + ")");
+				check(!spawnAt(p, bed), "spawn never set");
+			}));
 	}
 
 	/** A bed in the Nether explodes, sneaking or not, and never sets spawn. */
@@ -212,8 +263,28 @@ public final class ScenarioRunner {
 		void run(MinecraftServer server, ServerPlayer player, BedPos bed) throws Exception;
 	}
 
+	/** A scenario step: runs {@code delay} ticks after the previous one. */
+	private static final class Stage {
+		final int delay;
+		final Check check;
+
+		Stage(int delay, Check check) {
+			this.delay = delay;
+			this.check = check;
+		}
+	}
+
 	/** Places a bed on a stone pad in its own strip, adds a fresh player beside it, runs act, then later. */
 	private static void scenario(String name, int index, boolean sneaking, boolean day, Check act, Check later) {
+		if (later == null) {
+			scenario(name, index, sneaking, day, new Stage(3, act));
+		} else {
+			scenario(name, index, sneaking, day, new Stage(3, act), new Stage(5, later));
+		}
+	}
+
+	/** The same setup as above, then each stage in turn. The first stage sets the player sneaking or not. */
+	private static void scenario(String name, int index, boolean sneaking, boolean day, Stage... stages) {
 		final BedPos bed = new BedPos(BASE_X + index * 16, BASE_Z);
 		final ServerPlayer[] player = new ServerPlayer[1];
 		STEPS.add(new Step(1, server -> {
@@ -228,13 +299,16 @@ public final class ScenarioRunner {
 			player[0] = TestCompat.joinPlayer(server, "scen" + (playerCount++));
 			TestCompat.command(server, "tp " + player[0].getScoreboardName() + " " + (bed.foot.getX() - 0.5) + " " + Y + " " + (bed.foot.getZ() + 0.5));
 		}));
-		// A couple of ticks so the time of day and the teleport have taken effect.
-		STEPS.add(new Step(3, server -> {
-			TestCompat.setSneaking(player[0], sneaking);
-			act.run(server, player[0], bed);
-		}));
-		if (later != null) {
-			STEPS.add(new Step(5, server -> later.run(server, player[0], bed)));
+		// The first stage waits a couple of ticks, so the time of day and the teleport have taken effect.
+		for (int i = 0; i < stages.length; i++) {
+			final Stage stage = stages[i];
+			final boolean first = i == 0;
+			STEPS.add(new Step(stage.delay, server -> {
+				if (first) {
+					TestCompat.setSneaking(player[0], sneaking);
+				}
+				stage.check.run(server, player[0], bed);
+			}));
 		}
 		STEPS.add(new Step(1, server -> end(server, player[0])));
 	}

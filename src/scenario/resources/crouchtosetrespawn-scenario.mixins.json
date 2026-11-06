@@ -4,6 +4,7 @@
 	"package": "com.simplyag.crouchtosetrespawn.scenario.mixin",
 	"compatibilityLevel": "JAVA_8",
 	"mixins": [
+		"CompatSpyMixin",
 		"ServerTickMixin"
 	],
 	"injectors": {
