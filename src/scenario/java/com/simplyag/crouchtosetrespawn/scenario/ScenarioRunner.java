@@ -15,12 +15,10 @@ import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -111,7 +109,13 @@ public final class ScenarioRunner {
 			check(Compat.isDone(p, SpawnHint.SEEN_ADVANCEMENT), "first hint remembered");
 			check(!Compat.isDone(p, UndercoverSleeper.ADVANCEMENT), "no Undercover Sleeper");
 			check(!TestCompat.vanillaDone(p, "adventure/sleep_in_bed"), "no Sweet Dreams without setting spawn");
-		}, (server, p, bed) -> check(!Compat.isDone(p, SpawnHint.ADVANCEMENT), "hint toast revoked again"));
+		}, (server, p, bed) -> {
+			check(!Compat.isDone(p, SpawnHint.ADVANCEMENT), "hint toast revoked again");
+			// 1.14 vanilla sets spawn on waking up after the night rather than on the click.
+			TestCompat.wakeInTheMorning(p);
+			check(!p.isSleeping(), "woke up");
+			check(!spawnAt(p, bed), "waking up in the morning doesn't set spawn either");
+		});
 
 		scenario("sneak + use at night sets spawn and sleeps", 1, true, false, (server, p, bed) -> {
 			use(p, InteractionHand.MAIN_HAND, bed.foot);
@@ -120,7 +124,10 @@ public final class ScenarioRunner {
 			check(Compat.isDone(p, UndercoverSleeper.ADVANCEMENT), "Undercover Sleeper earned");
 			check(TestCompat.vanillaDone(p, "adventure/sleep_in_bed"), "Sweet Dreams earned");
 			check(!Compat.isDone(p, SpawnHint.ADVANCEMENT), "no hint on a sneak use");
-		}, null);
+		}, (server, p, bed) -> {
+			TestCompat.wakeInTheMorning(p);
+			check(spawnAt(p, bed), "spawn still at the bed after waking up");
+		});
 
 		scenario("sneak + use during the day sets spawn", 2, true, true, (server, p, bed) -> {
 			use(p, InteractionHand.MAIN_HAND, bed.foot);
@@ -190,11 +197,11 @@ public final class ScenarioRunner {
 		}));
 		STEPS.add(new Step(2, server -> {
 			ServerPlayer p = player[0];
-			check(Compat.level(p).dimension() == Level.NETHER, "player is in the Nether");
-			p.setShiftKeyDown(true);
+			check(TestCompat.isNether(Compat.level(p)), "player is in the Nether");
+			TestCompat.setSneaking(p, true);
 			use(p, InteractionHand.MAIN_HAND, bed.foot);
 			// The explosion can leave fire where the bed stood, so check that no bed is left rather than for air.
-			check(!Compat.level(p).getBlockState(bed.foot).is(BlockTags.BEDS) && !Compat.level(p).getBlockState(bed.head).is(BlockTags.BEDS), "bed destroyed");
+			check(!TestCompat.isBed(Compat.level(p).getBlockState(bed.foot)) && !TestCompat.isBed(Compat.level(p).getBlockState(bed.head)), "bed destroyed");
 			check(!spawnAt(p, bed), "spawn not set");
 			check(!p.isSleeping(), "not sleeping");
 		}));
@@ -223,7 +230,7 @@ public final class ScenarioRunner {
 		}));
 		// A couple of ticks so the time of day and the teleport have taken effect.
 		STEPS.add(new Step(3, server -> {
-			player[0].setShiftKeyDown(sneaking);
+			TestCompat.setSneaking(player[0], sneaking);
 			act.run(server, player[0], bed);
 		}));
 		if (later != null) {
@@ -255,7 +262,7 @@ public final class ScenarioRunner {
 	}
 
 	private static boolean spawnAt(ServerPlayer player, BedPos bed) {
-		return Compat.isSpawnAt(player, Compat.level(player).dimension(), bed.head);
+		return Compat.isSpawnAt(player, Compat.level(player), bed.head);
 	}
 
 	private static void begin(String name) {
@@ -283,7 +290,7 @@ public final class ScenarioRunner {
 	private static void end(MinecraftServer server, ServerPlayer player) {
 		if (player != null && server.getPlayerList().getPlayer(player.getUUID()) != null) {
 			if (player.isSleeping()) {
-				player.stopSleepInBed(false, true);
+				TestCompat.wake(player);
 			}
 			server.getPlayerList().remove(player);
 		}

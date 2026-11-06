@@ -3,6 +3,7 @@ package com.simplyag.crouchtosetrespawn.mixin;
 import com.mojang.datafixers.util.Either;
 import com.simplyag.crouchtosetrespawn.SpawnHint;
 import com.simplyag.crouchtosetrespawn.UndercoverSleeper;
+import com.simplyag.crouchtosetrespawn.util.BedUseDecider;
 import com.simplyag.crouchtosetrespawn.util.Compat;
 import com.simplyag.crouchtosetrespawn.util.SleptInBedGate;
 import net.minecraft.core.BlockPos;
@@ -21,12 +22,12 @@ import net.minecraft.world.attribute.BedRule;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.AbstractBedBlock;
 import net.minecraft.world.level.block.state.BlockState;
-//?} else {
+//?} else if >=1.16 {
 /*import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
 *///?}
 //? if <26.3 && >=1.21.5 {
 /*import net.minecraft.server.level.ServerPlayer.RespawnConfig;
-*///?} else if <1.21.5 {
+*///?} else if <1.21.5 && >=1.16 {
 /*import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 *///?}
@@ -36,12 +37,18 @@ import net.minecraft.world.level.Level;
  * message, monsters, sleeping) stays vanilla. Nether/End beds explode in the bed block's use method before this
  * method is ever reached, so sneaking can't bypass that.
  *
- * <p>26.3 decides "set spawn here" once, in BedRule.canSetSpawn, and the same answer gates the slept_in_bed
- * trigger (Sweet Dreams), so wrapping it covers both. Earlier versions call setRespawnPosition directly and fire
- * slept_in_bed on every sleep, so there the call itself is skipped and SleptInBedGate holds back the trigger.
+ * <p>Where vanilla decides to set spawn, by version:
+ * <ul>
+ * <li>26.3: once, in BedRule.canSetSpawn, and the same answer gates the slept_in_bed trigger (Sweet Dreams).</li>
+ * <li>1.16 - 26.2: a setRespawnPosition call in this method (its arguments changed in 1.16.2, 1.21.5, 1.21.9).</li>
+ * <li>1.15: two setRespawnPosition calls in Player (day and night branches), wrapped by PlayerMixin.</li>
+ * <li>1.14: only on waking up after a full night. PlayerMixin turns that off, and a sneak + use sets spawn here
+ * instead, in the same cases later versions do.</li>
+ * </ul>
+ * Before 26.3 vanilla fires slept_in_bed on every sleep, so SleptInBedGate holds it back unless spawn was set.
  */
 @Mixin(ServerPlayer.class)
-abstract class ServerPlayerMixin {
+abstract class ServerPlayerMixin implements BedUseDecider {
 	/** Set when vanilla would have moved spawn here but the player wasn't sneaking. Read at RETURN. */
 	@Unique
 	private boolean crouchtosetrespawn$spawnSkipped;
@@ -49,9 +56,8 @@ abstract class ServerPlayerMixin {
 	@Unique
 	private boolean crouchtosetrespawn$spawnSneakSet;
 
-	/** Records vanilla's decision for this bed use; returns whether spawn may be set. */
-	@Unique
-	private boolean crouchtosetrespawn$decide(boolean vanillaSets) {
+	@Override
+	public boolean crouchtosetrespawn$decide(boolean vanillaSets) {
 		ServerPlayer self = (ServerPlayer) (Object) this;
 		boolean sneaking = Compat.isSneaking(self);
 		this.crouchtosetrespawn$spawnSkipped = vanillaSets && !sneaking;
@@ -75,12 +81,26 @@ abstract class ServerPlayerMixin {
 	private boolean crouchtosetrespawn$onlyWhenSneaking(ServerPlayer self, RespawnConfig config, boolean sendMessage) {
 		return this.crouchtosetrespawn$decide(true);
 	}
-	*///?} else {
+	*///?} else if >=1.16.2 {
 	/*@WrapWithCondition(method = "startSleepInBed",
 		at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;setRespawnPosition(Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/BlockPos;FZZ)V"))
 	private boolean crouchtosetrespawn$onlyWhenSneaking(ServerPlayer self, ResourceKey<Level> dimension, BlockPos pos, float angle,
 		boolean forced, boolean sendMessage) {
 		return this.crouchtosetrespawn$decide(true);
+	}
+	*///?} else if >=1.16 {
+	/*@WrapWithCondition(method = "startSleepInBed",
+		at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;setRespawnPosition(Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/BlockPos;ZZ)V"))
+	private boolean crouchtosetrespawn$onlyWhenSneaking(ServerPlayer self, ResourceKey<Level> dimension, BlockPos pos, boolean forced,
+		boolean sendMessage) {
+		return this.crouchtosetrespawn$decide(true);
+	}
+	*///?} else if <1.15 {
+	/*@Inject(method = "startSleepInBed", at = @At("HEAD"))
+	private void crouchtosetrespawn$decideAtStart(BlockPos pos, CallbackInfoReturnable<Either<Player.BedSleepingProblem, Unit>> cir) {
+		// 1.14 sets spawn nowhere in this method, so decide up front. RETURN drops the uses later versions wouldn't
+		// set spawn for, and Sweet Dreams (fired inside this method) is held back for a normal use.
+		this.crouchtosetrespawn$decide(true);
 	}
 	*///?}
 
@@ -103,11 +123,21 @@ abstract class ServerPlayerMixin {
 		if (Player.BedSleepingProblem.TOO_FAR_AWAY.equals(problem) || Player.BedSleepingProblem.OBSTRUCTED.equals(problem)) {
 			return;
 		}
+		//? if <1.15 {
+		/*// What 1.16+ sets spawn for: a successful sleep, or one refused for the time of day or for monsters nearby.
+		if (problem != null && problem != Player.BedSleepingProblem.NOT_POSSIBLE_NOW && problem != Player.BedSleepingProblem.NOT_SAFE) {
+			return;
+		}
+		if (sneakSet) {
+			self.setRespawnPosition(pos, false);
+			Compat.sendRespawnSet(self);
+		}
+		*///?}
 
 		if (sneakSet) {
 			UndercoverSleeper.award(self);
 		}
-		if (skipped && !Compat.isSpawnAt(self, Compat.level(self).dimension(), pos)) {
+		if (skipped && !Compat.isSpawnAt(self, Compat.level(self), pos)) {
 			SpawnHint.maybeShow(self, pos);
 		}
 	}

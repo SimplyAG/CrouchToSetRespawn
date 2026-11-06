@@ -29,9 +29,10 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          # 17 and 21 build and run the older targets, 25 the 26.x targets and Gradle (the last one is the default).
-          # Older JDKs are downloaded by Gradle's toolchain resolver (foojay) when a target needs them.
+          # 11 builds and runs the Java 8 targets (1.14-1.16), 17 and 21 the later ones, 25 the 26.x targets and Gradle
+          # (the last one is the default).
           java-version: |
+            11
             17
             21
             25
@@ -61,6 +62,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: |
+            11
             17
             21
             25

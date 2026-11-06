@@ -3,10 +3,12 @@ package com.simplyag.crouchtosetrespawn.util;
 import com.simplyag.crouchtosetrespawn.CrouchToSetRespawn;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+//? if >=1.16
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.Level;
 //? if >=1.20.2 {
 import net.minecraft.advancements.AdvancementHolder;
@@ -54,7 +56,18 @@ public final class Compat {
 
 	/** "Use while sneaking" in vanilla's own sense: the key that makes block use pass to the held item. */
 	public static boolean isSneaking(ServerPlayer player) {
+		//? if >=1.15 {
 		return player.isSecondaryUseActive();
+		//?} else
+		/*return player.isSneaking();*/
+	}
+
+	/** Whether a use did something (1.14 has only SUCCESS for that; CONSUME came in 1.15). */
+	public static boolean consumesAction(InteractionResult result) {
+		//? if >=1.15 {
+		return result.consumesAction();
+		//?} else
+		/*return result == InteractionResult.SUCCESS;*/
 	}
 
 	public static Component literal(String text) {
@@ -72,16 +85,33 @@ public final class Compat {
 		/*player.displayClientMessage(text, true);*/
 	}
 
-	/** Whether the player's respawn point is the bed at {@code pos} in {@code dimension}. */
-	public static boolean isSpawnAt(ServerPlayer player, ResourceKey<Level> dimension, BlockPos pos) {
+	/**
+	 * The chat line vanilla 1.16+ sends when a bed sets spawn, for the versions where the mod sets it (1.14) or where
+	 * vanilla set it silently (1.15). Literal text: those clients have no "block.minecraft.set_spawn" translation.
+	 */
+	//? if <1.16 {
+	/*public static void sendRespawnSet(ServerPlayer player) {
+		player.displayClientMessage(literal("Respawn point set"), false);
+	}
+	*///?}
+
+	/**
+	 * Whether the player's respawn point is the bed at {@code pos} in {@code level}. Before 1.16 a respawn point
+	 * has no dimension (beds only work in the Overworld), so only the position is compared there.
+	 */
+	public static boolean isSpawnAt(ServerPlayer player, ServerLevel level, BlockPos pos) {
+		//? if >=1.16
+		ResourceKey<Level> dimension = level.dimension();
 		//? if >=1.21.9 {
 		ServerPlayer.RespawnConfig respawn = player.getRespawnConfig();
 		return respawn != null && respawn.respawnData().globalPos().equals(GlobalPos.of(dimension, pos));
 		//?} else if >=1.21.5 {
 		/*ServerPlayer.RespawnConfig respawn = player.getRespawnConfig();
 		return respawn != null && respawn.dimension() == dimension && pos.equals(respawn.pos());
-		*///?} else {
+		*///?} else if >=1.16 {
 		/*return player.getRespawnDimension() == dimension && pos.equals(player.getRespawnPosition());
+		*///?} else {
+		/*return pos.equals(player.getRespawnPosition());
 		*///?}
 	}
 

@@ -7,10 +7,9 @@ import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 
 /**
  * The "Sneak + use to set respawn" hint, at most once per player per night. A player's first ever hint is a toast;
@@ -47,12 +46,12 @@ public final class SpawnHint {
 
 	private static final class PendingText {
 		final int tick;
-		final ResourceKey<Level> dimension;
+		final ServerLevel level;
 		final BlockPos bed;
 
-		PendingText(int tick, ResourceKey<Level> dimension, BlockPos bed) {
+		PendingText(int tick, ServerLevel level, BlockPos bed) {
 			this.tick = tick;
-			this.dimension = dimension;
+			this.level = level;
 			this.bed = bed;
 		}
 	}
@@ -105,7 +104,7 @@ public final class SpawnHint {
 			PENDING_REVOKE.put(player.getUUID(), server.getTickCount() + REVOKE_DELAY);
 		} else {
 			PENDING_TEXT.put(player.getUUID(),
-				new PendingText(server.getTickCount() + ACTION_BAR_DELAY, Compat.level(player).dimension(), bed));
+				new PendingText(server.getTickCount() + ACTION_BAR_DELAY, Compat.level(player), bed));
 		}
 	}
 
@@ -119,7 +118,7 @@ public final class SpawnHint {
 				it.remove();
 				ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
 				// The player may have sneak-clicked this bed while the text was waiting; then it no longer applies.
-				if (player != null && !Compat.isSpawnAt(player, pending.dimension, pending.bed)) {
+				if (player != null && !Compat.isSpawnAt(player, pending.level, pending.bed)) {
 					Compat.sendOverlay(player, actionBarText());
 				}
 			}

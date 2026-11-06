@@ -59,8 +59,12 @@ Set your spawn with sneak + use for the first time to earn **Undercover Sleeper*
 | `crouchtosetrespawn-mc1.20-1.20.1` | 1.20 – 1.20.1 | 0.17.3+ | 17 |
 | `crouchtosetrespawn-mc1.19-1.19.4` | 1.19 – 1.19.4 | 0.17.3+ | 17 |
 | `crouchtosetrespawn-mc1.17-1.18.2` | 1.17 – 1.18.2 | 0.17.3+ | 16 (17 for 1.18) |
+| `crouchtosetrespawn-mc1.16.2-1.16.5` | 1.16.2 – 1.16.5 | 0.17.3+ | 8 |
+| `crouchtosetrespawn-mc1.16-1.16.1` | 1.16 – 1.16.1 | 0.17.3+ | 8 |
+| `crouchtosetrespawn-mc1.15-1.15.2` | 1.15 – 1.15.2 | 0.17.3+ | 8 |
+| `crouchtosetrespawn-mc1.14.4` | 1.14.4 | 0.17.3+ | 8 |
 
-Every feature works the same on every version.
+Every feature works the same on every version. Before 1.16, vanilla sends no message when a bed sets spawn (1.14 only set it on waking up in the morning), so there the mod says "Respawn point set" itself.
 
 ## Building
 

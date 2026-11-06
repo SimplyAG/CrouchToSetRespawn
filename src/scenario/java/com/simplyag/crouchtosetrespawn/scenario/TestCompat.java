@@ -11,6 +11,16 @@ import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.state.BlockState;
+//? if <1.17
+/*import net.minecraft.server.level.ServerPlayerGameMode;*/
+//? if >=1.16 {
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.Level;
+//?} else {
+/*import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.dimension.DimensionType;
+*///?}
 //? if >=1.20.2 {
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.server.network.CommonListenerCookie;
@@ -32,7 +42,10 @@ final class TestCompat {
 	 */
 	static ServerPlayer joinPlayer(MinecraftServer server, String name) {
 		GameProfile profile = new GameProfile(UUID.nameUUIDFromBytes(("scenario:" + name).getBytes()), name);
+		//? if >=1.16 {
 		ServerLevel overworld = server.overworld();
+		//?} else
+		/*ServerLevel overworld = server.getLevel(DimensionType.OVERWORLD);*/
 		Connection connection = new Connection(PacketFlow.SERVERBOUND);
 		EmbeddedChannel channel = new EmbeddedChannel(connection);
 		//? if >=1.20.2 && <1.20.5 {
@@ -54,8 +67,11 @@ final class TestCompat {
 		*///?} else if >=1.19 {
 		/*ServerPlayer player = new ServerPlayer(server, overworld, profile, null);
 		server.getPlayerList().placeNewPlayer(connection, player);
-		*///?} else {
+		*///?} else if >=1.17 {
 		/*ServerPlayer player = new ServerPlayer(server, overworld, profile);
+		server.getPlayerList().placeNewPlayer(connection, player);
+		*///?} else {
+		/*ServerPlayer player = new ServerPlayer(server, overworld, profile, new ServerPlayerGameMode(overworld));
 		server.getPlayerList().placeNewPlayer(connection, player);
 		*///?}
 		return player;
@@ -82,5 +98,42 @@ final class TestCompat {
 		//?} else
 		/*Advancement advancement = Compat.server(player).getAdvancements().getAdvancement(id);*/
 		return advancement != null && player.getAdvancements().getOrStartProgress(advancement).isDone();
+	}
+
+	static boolean isNether(ServerLevel level) {
+		//? if >=1.16 {
+		return level.dimension() == Level.NETHER;
+		//?} else
+		/*return level.getDimension().getType() == DimensionType.NETHER;*/
+	}
+
+	static void setSneaking(ServerPlayer player, boolean sneaking) {
+		//? if >=1.15 {
+		player.setShiftKeyDown(sneaking);
+		//?} else
+		/*player.setSneaking(sneaking);*/
+	}
+
+	static boolean isBed(BlockState state) {
+		//? if >=1.16 {
+		return state.is(BlockTags.BEDS);
+		//?} else
+		/*return state.getBlock() instanceof BedBlock;*/
+	}
+
+	/** Wakes the player the way the end of a slept-through night does (on 1.14 that is what sets spawn). */
+	static void wakeInTheMorning(ServerPlayer player) {
+		//? if >=1.15 {
+		player.stopSleepInBed(false, true);
+		//?} else
+		/*player.stopSleepInBed(false, false, true);*/
+	}
+
+	/** Gets the player out of bed without touching spawn. */
+	static void wake(ServerPlayer player) {
+		//? if >=1.15 {
+		player.stopSleepInBed(false, true);
+		//?} else
+		/*player.stopSleepInBed(false, true, false);*/
 	}
 }

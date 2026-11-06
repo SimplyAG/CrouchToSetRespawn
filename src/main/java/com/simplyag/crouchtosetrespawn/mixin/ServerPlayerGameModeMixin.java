@@ -4,6 +4,8 @@ import com.simplyag.crouchtosetrespawn.ModConfig;
 import com.simplyag.crouchtosetrespawn.util.Compat;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerPlayerGameMode;
+//? if <1.16
+/*import net.minecraft.world.entity.player.Player;*/
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
@@ -41,9 +43,16 @@ abstract class ServerPlayerGameModeMixin {
 	private long crouchtosetrespawn$bedUsedAt = Long.MIN_VALUE;
 
 	@Inject(method = "useItemOn", at = @At("RETURN"), cancellable = true)
+	//? if >=1.16 {
 	private void crouchtosetrespawn$useBedDespiteItems(ServerPlayer player, Level level, ItemStack itemStack, InteractionHand hand,
 		BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
-		if (!ModConfig.sneakWithItemsSetsSpawn || hand != InteractionHand.OFF_HAND || cir.getReturnValue().consumesAction()
+	//?} else {
+	/*private void crouchtosetrespawn$useBedDespiteItems(Player user, Level level, ItemStack itemStack, InteractionHand hand,
+		BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
+		// Before 1.16 the game mode took a Player; it is always the game mode's own ServerPlayer.
+		ServerPlayer player = (ServerPlayer) user;
+	*///?}
+		if (!ModConfig.sneakWithItemsSetsSpawn || hand != InteractionHand.OFF_HAND || Compat.consumesAction(cir.getReturnValue())
 			|| player.isSpectator() || !Compat.isSneaking(player)) {
 			return;
 		}
@@ -62,9 +71,12 @@ abstract class ServerPlayerGameModeMixin {
 
 		//? if >=1.20.5 {
 		InteractionResult use = state.useWithoutItem(level, player, hitResult);
-		//?} else
-		/*InteractionResult use = state.use(level, player, hand, hitResult);*/
-		if (use.consumesAction()) {
+		//?} else if >=1.15 {
+		/*InteractionResult use = state.use(level, player, hand, hitResult);
+		*///?} else {
+		/*InteractionResult use = state.use(level, player, hand, hitResult) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+		*///?}
+		if (Compat.consumesAction(use)) {
 			//? if >=1.20.5
 			CriteriaTriggers.DEFAULT_BLOCK_USE.trigger(player, hitResult.getBlockPos());
 			this.crouchtosetrespawn$bedUsedAt = level.getGameTime();
@@ -77,8 +89,13 @@ abstract class ServerPlayerGameModeMixin {
 	 * offhand item. Drop that one, so a shield isn't raised or food eaten while getting into bed.
 	 */
 	@Inject(method = "useItem", at = @At("HEAD"), cancellable = true)
+	//? if >=1.16 {
 	private void crouchtosetrespawn$skipFollowUpUse(ServerPlayer player, Level level, ItemStack itemStack, InteractionHand hand,
 		CallbackInfoReturnable<InteractionResult> cir) {
+	//?} else {
+	/*private void crouchtosetrespawn$skipFollowUpUse(Player player, Level level, ItemStack itemStack, InteractionHand hand,
+		CallbackInfoReturnable<InteractionResult> cir) {
+	*///?}
 		if (hand == InteractionHand.OFF_HAND && this.crouchtosetrespawn$bedUsedAt == level.getGameTime()) {
 			this.crouchtosetrespawn$bedUsedAt = Long.MIN_VALUE;
 			cir.setReturnValue(InteractionResult.PASS);
