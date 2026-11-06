@@ -54,6 +54,11 @@ Set your spawn with sneak + use for the first time to earn **Undercover Sleeper*
 | `crouchtosetrespawn-mc1.21.5-1.21.8` | 1.21.5 – 1.21.8 | 0.17.3+ | 21 |
 | `crouchtosetrespawn-mc1.21.2-1.21.4` | 1.21.2 – 1.21.4 | 0.17.3+ | 21 |
 | `crouchtosetrespawn-mc1.21-1.21.1` | 1.21 – 1.21.1 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.20.5-1.20.6` | 1.20.5 – 1.20.6 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.20.2-1.20.4` | 1.20.2 – 1.20.4 | 0.17.3+ | 17 |
+| `crouchtosetrespawn-mc1.20-1.20.1` | 1.20 – 1.20.1 | 0.17.3+ | 17 |
+| `crouchtosetrespawn-mc1.19-1.19.4` | 1.19 – 1.19.4 | 0.17.3+ | 17 |
+| `crouchtosetrespawn-mc1.17-1.18.2` | 1.17 – 1.18.2 | 0.17.3+ | 16 (17 for 1.18) |
 
 Every feature works the same on every version.
 

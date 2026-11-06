@@ -269,9 +269,13 @@ public final class ScenarioRunner {
 		}
 	}
 
+	/** Records a failed check. Every failed check in a scenario is listed, so one result shows the whole picture. */
 	private static void fail(String why) {
 		if (!currentFailed) {
 			RESULTS.add("FAIL " + current + ": " + why);
+		} else {
+			int last = RESULTS.size() - 1;
+			RESULTS.set(last, RESULTS.get(last) + "; " + why);
 		}
 		currentFailed = true;
 	}

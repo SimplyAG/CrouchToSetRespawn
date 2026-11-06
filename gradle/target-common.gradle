@@ -46,7 +46,7 @@ def runScenario = tasks.named('runScenario') {
 		// A free port per run, so several versions' scenario servers can run at the same time.
 		def port = new ServerSocket(0).withCloseable { it.localPort }
 		new File(scenarioDir, 'eula.txt').text = 'eula=true\n'
-		new File(scenarioDir, 'server.properties').text = ['online-mode=false', 'level-type=minecraft\\:flat', 'difficulty=peaceful',
+		new File(scenarioDir, 'server.properties').text = ['online-mode=false', "level-type=${project.findProperty('scenario_level_type') ?: 'minecraft\\:flat'}".toString(), 'difficulty=peaceful',
 				'spawn-monsters=false', 'spawn-protection=0', "server-port=${port}".toString(), 'enforce-secure-profile=false', 'white-list=false',
 				'generate-structures=false'].join('\n') + '\n'
 	}
@@ -103,6 +103,23 @@ processResources {
 		expand advancementFormat
 		path = path.replace('/advancement/', "/${advancementFormat.advancement_dir}/")
 	}
+}
+
+// Dev runs only: Loom runs the mod from two folders (classes and resources), and old Fabric API (1.18 and earlier)
+// loads data packs from just one of them, so the mod's advancements went missing in the scenario test. Copy the
+// resources in beside the classes so both folders have them. A built jar has a single root and never needs this.
+if ((project.findProperty('dev_single_root') ?: 'false') == 'true') {
+	// Copied whenever either task runs, so the copy is never older than the real resources (the jar takes both
+	// folders, and a stale copy would win).
+	def resourcesOut = tasks.named('processResources').map { it.destinationDir }
+	def classesOut = tasks.named('compileJava').flatMap { it.destinationDirectory }
+	def copyResources = { project.copy { from resourcesOut; into classesOut } }
+	tasks.named('compileJava') { doLast { copyResources() } }
+	tasks.named('processResources') {
+		mustRunAfter 'compileJava'
+		doLast { copyResources() }
+	}
+	tasks.named('jar') { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
 }
 
 tasks.withType(JavaCompile).configureEach {

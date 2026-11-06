@@ -12,13 +12,20 @@ import net.minecraft.advancements.triggers.PlayerTrigger;
 //?} else if >=1.21.11 {
 /*import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraft.advancements.criterion.PlayerTrigger;
-*///?} else {
+*///?} else if >=1.19 {
 /*import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraft.advancements.critereon.PlayerTrigger;
+*///?} else {
+/*import net.minecraft.advancements.CriteriaTriggers;
+import net.minecraft.advancements.critereon.LocationTrigger;
 *///?}
 
 /** See SleptInBedGate: skips slept_in_bed for a sleep that didn't set spawn (on 26.3+ vanilla already does). */
+// Before 1.19, slept_in_bed was a LocationTrigger with the same trigger(ServerPlayer).
+//? if >=1.19 {
 @Mixin(PlayerTrigger.class)
+//?} else
+/*@Mixin(LocationTrigger.class)*/
 abstract class PlayerTriggerMixin {
 	@Inject(method = "trigger", at = @At("HEAD"), cancellable = true)
 	private void crouchtosetrespawn$onlyWhenSpawnSet(ServerPlayer player, CallbackInfo ci) {

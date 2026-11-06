@@ -17,8 +17,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 //? if >=26.2 {
 import net.minecraft.advancements.triggers.CriteriaTriggers;
-//?} else
-/*import net.minecraft.advancements.CriteriaTriggers;*/
+//?} else if >=1.20.5 {
+/*import net.minecraft.advancements.CriteriaTriggers;
+*///?}
 //? if >=26.3 {
 import net.minecraft.world.level.block.AbstractBedBlock;
 //?} else
@@ -59,8 +60,12 @@ abstract class ServerPlayerGameModeMixin {
 			return;
 		}
 
+		//? if >=1.20.5 {
 		InteractionResult use = state.useWithoutItem(level, player, hitResult);
+		//?} else
+		/*InteractionResult use = state.use(level, player, hand, hitResult);*/
 		if (use.consumesAction()) {
+			//? if >=1.20.5
 			CriteriaTriggers.DEFAULT_BLOCK_USE.trigger(player, hitResult.getBlockPos());
 			this.crouchtosetrespawn$bedUsedAt = level.getGameTime();
 			cir.setReturnValue(use);
