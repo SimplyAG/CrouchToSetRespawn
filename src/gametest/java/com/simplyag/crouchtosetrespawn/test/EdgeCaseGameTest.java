@@ -322,7 +322,8 @@ public class EdgeCaseGameTest {
 
 		use(sneaker, bedA.foot());
 		use(normal, bedB.foot());
-		helper.assertTrue(sneaker.isSleeping() && normal.isSleeping(), "both in bed");
+		helper.assertTrue(sneaker.isSleeping() && normal.isSleeping(), "both in bed (" + sleepState(helper, sneaker, bedA) + "; "
+			+ sleepState(helper, normal, bedB) + ")");
 
 		// Mock connections are not ticked by the server, and that tick is what advances the sleep timer.
 		helper.onEachTick(() -> {
@@ -342,6 +343,16 @@ public class EdgeCaseGameTest {
 	}
 
 	// --- Helpers ----------------------------------------------------------------------------------------------
+
+	/** Why a player might not be in bed, for failure messages: the checks vanilla makes before sleeping. */
+	private static String sleepState(GameTestHelper helper, ServerPlayer player, Bed bed) {
+		ServerLevel level = helper.getLevel();
+		int monsters = level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+			new net.minecraft.world.phys.AABB(bed.foot()).inflate(8, 5, 8)).size();
+		return player.getScoreboardName() + ": sleeping=" + player.isSleeping() + " dark=" + level.isDarkOutside()
+			+ " time=" + level.getDefaultClockTime() + " monsters=" + monsters
+			+ " distance=" + String.format("%.2f", player.position().distanceTo(net.minecraft.world.phys.Vec3.atBottomCenterOf(bed.foot())));
+	}
 
 	private static Bed strawBed(GameTestHelper helper) {
 		// The floor comes with a red bed; clear it first, or replacing one half at a time makes vanilla break the new bed.
