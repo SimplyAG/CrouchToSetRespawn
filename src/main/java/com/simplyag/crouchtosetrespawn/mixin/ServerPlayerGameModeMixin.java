@@ -1,14 +1,13 @@
 package com.simplyag.crouchtosetrespawn.mixin;
 
 import com.simplyag.crouchtosetrespawn.ModConfig;
-import net.minecraft.advancements.triggers.CriteriaTriggers;
+import com.simplyag.crouchtosetrespawn.util.Compat;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerPlayerGameMode;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.AbstractBedBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +15,14 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+//? if >=26.2 {
+import net.minecraft.advancements.triggers.CriteriaTriggers;
+//?} else
+/*import net.minecraft.advancements.CriteriaTriggers;*/
+//? if >=26.3 {
+import net.minecraft.world.level.block.AbstractBedBlock;
+//?} else
+/*import net.minecraft.world.level.block.BedBlock;*/
 
 /**
  * sneak_with_items_sets_spawn: vanilla skips the bed on a sneak-click whenever either hand holds anything. When
@@ -36,7 +43,7 @@ abstract class ServerPlayerGameModeMixin {
 	private void crouchtosetrespawn$useBedDespiteItems(ServerPlayer player, Level level, ItemStack itemStack, InteractionHand hand,
 		BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
 		if (!ModConfig.sneakWithItemsSetsSpawn || hand != InteractionHand.OFF_HAND || cir.getReturnValue().consumesAction()
-			|| player.isSpectator() || !player.isSecondaryUseActive()) {
+			|| player.isSpectator() || !Compat.isSneaking(player)) {
 			return;
 		}
 		// Both hands empty means vanilla already used the bed; this is only for the case it skipped.
@@ -45,7 +52,10 @@ abstract class ServerPlayerGameModeMixin {
 		}
 
 		BlockState state = level.getBlockState(hitResult.getBlockPos());
+		//? if >=26.3 {
 		if (!(state.getBlock() instanceof AbstractBedBlock)) {
+		//?} else
+		/*if (!(state.getBlock() instanceof BedBlock)) {*/
 			return;
 		}
 

@@ -1,0 +1,24 @@
+# Fails (and so emails the repository owner) when Mojang has released a Minecraft version this mod isn't tested on
+# yet. The newest jar declares ">=" its version, so players can usually already use it; this is the reminder to test
+# it and list it. Runs daily; snapshots are ignored.
+name: new minecraft release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 7 * * *'
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compare Mojang's latest release with release-groups.json
+        run: |
+          latest=$(curl --fail --silent https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.latest.release')
+          if jq -e --arg v "$latest" '[.groups[].minecraft[]] | index($v)' release-groups.json > /dev/null; then
+            echo "Minecraft $latest is supported."
+          else
+            echo "::error::Minecraft $latest is out and not tested yet. Add versions/$latest, list it in settings.gradle, then either add it to an existing group in release-groups.json (only if verifyGroupClasses and runScenarioTest pass) or give it its own group."
+            exit 1
+          fi

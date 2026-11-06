@@ -1,0 +1,98 @@
+# Builds every Minecraft version, proves each release group's members compile to identical classes, and runs the bed
+# scenarios in a real dedicated server on every supported version, plus the deep game tests and the vanilla-client join
+# test on the newest. Runs on every push and pull request, and weekly to catch breakage from updated dependencies.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * 1'
+
+jobs:
+  versions:
+    runs-on: ubuntu-24.04
+    outputs:
+      minecraft: ${{ steps.list.outputs.minecraft }}
+    steps:
+      - uses: actions/checkout@v6
+      # The test matrix comes from release-groups.json, so it can't drift from what is published.
+      - id: list
+        run: echo "minecraft=$(jq -c '[.groups[].minecraft[]]' release-groups.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: gradle/actions/wrapper-validation@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          # 17 and 21 build and run the older targets, 25 the 26.x targets and Gradle (the last one is the default).
+          # Older JDKs are downloaded by Gradle's toolchain resolver (foojay) when a target needs them.
+          java-version: |
+            17
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v5
+      - run: chmod +x ./gradlew
+      - run: ./gradlew build verifyGroupClasses --stacktrace
+      - uses: actions/upload-artifact@v7
+        with:
+          name: jars
+          path: |
+            versions/*/build/libs/*.jar
+            !versions/*/build/libs/*-sources.jar
+            build/release/group-classes.txt
+
+  scenario:
+    needs: versions
+    runs-on: ubuntu-24.04
+    # A scenario run takes under a minute; its own watchdog ends a hung server after five.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ${{ fromJson(needs.versions.outputs.minecraft) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: |
+            17
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v5
+      - run: chmod +x ./gradlew
+      - name: Bed scenarios
+        env:
+          MINECRAFT: ${{ matrix.minecraft }}
+        # Downloads from Mojang's servers fail now and then; only that is retried. A failing scenario fails at once.
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew ":$MINECRAFT:runScenarioTest" --stacktrace 2>&1 | tee test-output.log; [[ ${PIPESTATUS[0]} -eq 0 ]]; then exit 0; fi
+            if grep -q 'loom.util.download.DownloadException' test-output.log; then
+              echo "::warning::Minecraft $MINECRAFT: a download from Mojang failed (attempt $attempt of 3)"
+              sleep 30
+            else
+              exit 1
+            fi
+          done
+          exit 1
+
+  gametest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v5
+      - run: chmod +x ./gradlew
+      # Software rendering for the headless client in the vanilla-client join test.
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libgl1-mesa-dri
+      - run: ./gradlew :26.3:runGameTest vanillaClientTest --stacktrace

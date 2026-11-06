@@ -27,6 +27,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -643,6 +645,15 @@ public class CrouchSpawnGameTest {
 
 	/** Any AbstractBedBlock (colored or straw), south-facing. */
 	static Bed placeBedAt(ServerLevel level, BlockPos foot, Block bedBlock) {
+		// The test world spawns monsters at night, and one wandering near the bed would make vanilla refuse to
+		// sleep ("You may not rest now; there are monsters nearby"), failing a test at random. Tests that want a
+		// monster spawn their own after placing the bed.
+		for (Monster monster : level.getEntitiesOfClass(Monster.class, new AABB(foot).inflate(16))) {
+			monster.discard();
+		}
+		// A test environment sets the clock when its batch starts, but the sky darkness that decides "is it night"
+		// is only recomputed on the next tick. A batch's tick-0 tests after a daytime batch would otherwise see day.
+		level.updateSkyBrightness();
 		BlockPos head = foot.south();
 		BlockState state = bedBlock.defaultBlockState().setValue(AbstractBedBlock.FACING, Direction.SOUTH);
 		level.setBlockAndUpdate(foot, state.setValue(AbstractBedBlock.PART, BedPart.FOOT));

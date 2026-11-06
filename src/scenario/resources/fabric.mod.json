@@ -1,0 +1,13 @@
+{
+	"schemaVersion": 1,
+	"id": "crouchtosetrespawn-scenario",
+	"version": "1.0.0",
+	"name": "Crouch to Set Respawn Scenario Test",
+	"environment": "*",
+	"mixins": [
+		"crouchtosetrespawn-scenario.mixins.json"
+	],
+	"depends": {
+		"crouchtosetrespawn": "*"
+	}
+}

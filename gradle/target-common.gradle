@@ -14,6 +14,59 @@ fabricApi {
 	}
 }
 
+// Scenario test (`gradlew :<mc>:runScenarioTest`), on every version: the same bed scenarios in a real dedicated server,
+// driven by a test-only mod (src/scenario). It writes build/run/scenario/scenario-result.txt and stops the server.
+sourceSets {
+	scenario {
+		compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+		runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+	}
+}
+loom {
+	mods {
+		register('crouchtosetrespawn') { sourceSet sourceSets.main }
+		register('crouchtosetrespawn-scenario') { sourceSet sourceSets.scenario }
+	}
+	runs {
+		register('scenario') {
+			server()
+			configName = 'Scenario test'
+			source sourceSets.scenario
+			runDir = 'build/run/scenario'
+			ideConfigGenerated = false
+		}
+	}
+}
+def scenarioDir = file('build/run/scenario')
+def runScenario = tasks.named('runScenario') {
+	doFirst {
+		// A fresh peaceful flat world every run, so earlier runs can't leak saved advancements or spawn points.
+		project.delete(new File(scenarioDir, 'world'), new File(scenarioDir, 'scenario-result.txt'), new File(scenarioDir, 'config'))
+		scenarioDir.mkdirs()
+		// A free port per run, so several versions' scenario servers can run at the same time.
+		def port = new ServerSocket(0).withCloseable { it.localPort }
+		new File(scenarioDir, 'eula.txt').text = 'eula=true\n'
+		new File(scenarioDir, 'server.properties').text = ['online-mode=false', 'level-type=minecraft\\:flat', 'difficulty=peaceful',
+				'spawn-monsters=false', 'spawn-protection=0', "server-port=${port}".toString(), 'enforce-secure-profile=false', 'white-list=false',
+				'generate-structures=false'].join('\n') + '\n'
+	}
+}
+tasks.register('runScenarioTest') {
+	group = 'verification'
+	description = 'Runs the bed scenarios in a real dedicated server on this Minecraft version.'
+	dependsOn runScenario
+	doLast {
+		def result = new File(scenarioDir, 'scenario-result.txt')
+		if (!result.isFile()) throw new GradleException("The scenario test wrote no result; see the server log above")
+		def lines = result.readLines()
+		lines.each { logger.lifecycle("  ${it}") }
+		if (!lines.contains('DONE') || lines.any { it.startsWith('FAIL') }) {
+			throw new GradleException("Scenario test failed on Minecraft ${project.minecraft_version}")
+		}
+		logger.lifecycle("All ${lines.count { it.startsWith('PASS') }} scenarios passed on Minecraft ${project.minecraft_version}")
+	}
+}
+
 // Every member of a release group compiles at the group lead's Java level, so its classes can be compared byte for
 // byte with the lead's and the lead's jar runs on all of them.
 def javaVersion = ctsrJavaVersion as int
@@ -57,7 +110,7 @@ tasks.withType(JavaCompile).configureEach {
 	it.options.encoding = "UTF-8"
 	// One fixed javac per target, whatever JDK runs Gradle: javac versions number lambdas differently, which would
 	// make otherwise identical classes differ between a group's members.
-	it.javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+	it.javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(ctsrJavacVersion as int) }
 }
 
 java {
@@ -73,9 +126,10 @@ jar {
 	}
 }
 
-tasks.matching { it.name == 'runGameTest' || it.name == 'runScenarioTest' }.configureEach {
-	// The game runs on the target's Java, not whatever JDK runs Gradle.
-	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+tasks.matching { it.name == 'runGameTest' || it.name == 'runScenario' }.configureEach {
+	// The game runs on the group's JDK (the target's Java, or the newer one standing in for an unsupported JDK),
+	// not whatever JDK runs Gradle.
+	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(ctsrJavacVersion as int) }
 }
 
 // Vanilla client join test: only the version it runs on stages the real dedicated server.

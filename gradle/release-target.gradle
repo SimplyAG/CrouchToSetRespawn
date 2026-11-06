@@ -4,6 +4,8 @@
 //   ext.ctsrGroupVersions     Minecraft versions served by this target's release group (release-groups.json)
 //   ext.ctsrIsLead            true if this target builds the group's published jar (the group's first version)
 //   ext.ctsrJavaVersion       Java level of the group lead; every member compiles at it, so classes can be compared
+//   ext.ctsrJavacVersion      the JDK whose javac compiles the group (javac_version, default java_version): one fixed
+//                             javac per group, since javac versions number lambdas differently
 //   ext.ctsrMinecraftDepItems fabric.mod.json "depends.minecraft" items
 //   ext.ctsrReleaseJarFile    the jar that is verified and staged
 //
@@ -25,6 +27,9 @@ rootProject.file("versions/${leadVersion}/gradle.properties").withInputStream { 
 ext.ctsrGroupVersions = releaseGroup.minecraft as List<String>
 ext.ctsrIsLead = leadVersion == mcVersion
 ext.ctsrJavaVersion = Integer.parseInt(leadProperties.getProperty('java_version'))
+// Java 8 and 16 targets compile with a newer javac (--release keeps the bytecode and API at the target level), since
+// those JDKs are long out of support.
+ext.ctsrJavacVersion = Integer.parseInt(leadProperties.getProperty('javac_version') ?: leadProperties.getProperty('java_version'))
 // Older groups declare exactly their versions: newer Minecraft has its own jar, and Fabric Loader then shows a clear
 // "needs Minecraft X" message instead of the game crashing on a changed API. The newest group declares ">=lead", so
 // new Minecraft releases keep working without a re-release until one really changes something the mod hooks.

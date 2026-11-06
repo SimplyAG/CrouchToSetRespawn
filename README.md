@@ -41,17 +41,34 @@ Set your spawn with sneak + use for the first time to earn **Undercover Sleeper*
 
 ## Requirements
 
-- Minecraft 26.3 or newer
-- Fabric Loader 0.19.5 or newer
-- [Fabric API](https://modrinth.com/mod/fabric-api) (server side, any version for your Minecraft version)
-- Java 25
+- [Fabric API](https://modrinth.com/mod/fabric-api) on the server (any version for your Minecraft version)
+- The jar for your Minecraft version:
+
+| Jar | Minecraft | Fabric Loader | Java |
+|---|---|---|---|
+| `crouchtosetrespawn-mc26.3` | 26.3 and newer | 0.19.3+ | 25 |
+| `crouchtosetrespawn-mc26.2` | 26.2 | 0.18.4+ | 25 |
+| `crouchtosetrespawn-mc26.1-26.1.2` | 26.1 – 26.1.2 | 0.18.4+ | 25 |
+| `crouchtosetrespawn-mc1.21.11` | 1.21.11 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.21.9-1.21.10` | 1.21.9 – 1.21.10 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.21.5-1.21.8` | 1.21.5 – 1.21.8 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.21.2-1.21.4` | 1.21.2 – 1.21.4 | 0.17.3+ | 21 |
+| `crouchtosetrespawn-mc1.21-1.21.1` | 1.21 – 1.21.1 | 0.17.3+ | 21 |
+
+Every feature works the same on every version.
 
 ## Building
+
+One source tree builds every Minecraft version ([Stonecutter](https://stonecutter.kikugie.dev/)); `release-groups.json` decides which versions share a jar.
 
 ```
 gradlew build
 ```
-The jar is written to `build/libs/`. `gradlew runGameTest` runs the server game tests. `gradlew vanillaClientTest` starts a real dedicated server with the mod and joins it from a client that doesn't have it.
+Each version's jar is written to `versions/<minecraft>/build/libs/`. Tests:
+- `gradlew :<minecraft>:runScenarioTest` runs the bed scenarios in a real dedicated server on that version (every version).
+- `gradlew :26.3:runGameTest` runs the 50 server game tests on the newest version.
+- `gradlew vanillaClientTest` starts a real dedicated server with the mod and joins it from a client that doesn't have it.
+- `gradlew verifyGroupClasses` checks that every version in a release group compiles to identical classes.
 
 ## License
 
